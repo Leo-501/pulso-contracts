@@ -187,3 +187,53 @@ export function occurrenceDate(
   d.setUTCDate(Math.min(day, last));
   return d.toISOString().slice(0, 10);
 }
+
+// --- Edição e inativação de cadastros -------------------------------------
+// Atualização parcial: os campos ausentes preservam o valor atual.
+export const assetUpdateSchema = assetSchema.partial().strict();
+export const partUpdateSchema = partSchema.partial().strict();
+// A recorrência não é editável neste incremento: mudar frequência, intervalo ou âncora
+// exige recalcular ocorrências já geradas, o que é versionamento de plano e continua
+// no backlog. Só os campos sem efeito retroativo são aceitos aqui.
+export const planUpdateSchema = z
+  .object({
+    name: required(160).optional(),
+    lead_days: z.number().int().min(0).max(30).optional(),
+    assigned_to: idSchema.nullable().optional(),
+  })
+  .strict();
+export const activationSchema = z.object({ active: z.boolean() }).strict();
+
+// --- Gestão de contas ------------------------------------------------------
+export const passwordSchema = z
+  .object({
+    current: z.string().min(1).max(256),
+    next: z
+      .string()
+      .min(10, 'Use pelo menos 10 caracteres.')
+      .max(256)
+      .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), 'Combine letras e números.'),
+  })
+  .strict()
+  .refine((v) => v.current !== v.next, {
+    message: 'A nova senha precisa ser diferente da atual.',
+    path: ['next'],
+  });
+export const userSchema = z
+  .object({
+    name: required(120),
+    email: z.email(),
+    role: z.enum(roles),
+    site_ids: z.array(idSchema).min(1).max(50),
+  })
+  .strict();
+export const membershipSchema = z
+  .object({
+    role: z.enum(roles).optional(),
+    active: z.boolean().optional(),
+    site_ids: z.array(idSchema).min(1).max(50).optional(),
+  })
+  .strict();
+
+// --- Seleção de unidade ----------------------------------------------------
+export const siteSchema = z.object({ site_id: idSchema }).strict();
