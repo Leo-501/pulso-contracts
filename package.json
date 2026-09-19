@@ -1,0 +1,51 @@
+{
+  "name": "@pulso/contracts",
+  "version": "0.2.0",
+  "description": "Contrato compartilhado do Pulso CMMS: regras de domínio, protocolo mobile e cliente de referência de sincronização.",
+  "private": false,
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./mobile": {
+      "types": "./dist/mobile.d.ts",
+      "default": "./dist/mobile.js"
+    },
+    "./offline": {
+      "types": "./dist/offline/index.d.ts",
+      "default": "./dist/offline/index.js"
+    },
+    "./offline/testing": {
+      "types": "./dist/offline/testing.d.ts",
+      "default": "./dist/offline/testing.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "format": "prettier --write ."
+  },
+  "peerDependencies": {
+    "zod": "4.6.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prettier": "3.9.6",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "zod": "4.6.2"
+  }
+}
