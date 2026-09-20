@@ -280,3 +280,32 @@ test('o quadro de pessoas aceita empresa sem ninguém', async () => {
   const quadro = await client(fetchImpl).roster('tok');
   assert.deepEqual(quadro.people, []);
 });
+
+test('credencial de serviço errada não desloga ninguém: falha fechado', async () => {
+  // A introspecção nunca recusa token com 4xx — token inválido é active:false em
+  // 200. Um 401 aqui é o produto com credencial errada, e repassá-lo ao navegador
+  // deslogaria todo mundo de uma vez por causa de um erro de configuração.
+  const { fetchImpl } = transport(() => ({
+    __status: 401,
+    message: 'Credencial de serviço inválida.',
+    code: 'service_credential',
+  }));
+  await assert.rejects(() => client(fetchImpl).introspect('tok'), IdentityUnavailableError);
+});
+
+test('introspecção trata qualquer 4xx como indisponibilidade, mesmo sem o código', async () => {
+  const { fetchImpl } = transport(() => ({ __status: 403, message: 'proibido' }));
+  await assert.rejects(() => client(fetchImpl).introspect('tok'), IdentityUnavailableError);
+});
+
+test('nas demais rotas o código separa credencial do produto de senha da pessoa', async () => {
+  const doProduto = transport(() => ({
+    __status: 401,
+    message: 'Credencial de serviço inválida.',
+    code: 'service_credential',
+  }));
+  await assert.rejects(() => client(doProduto.fetchImpl).login({}), IdentityUnavailableError);
+
+  const daPessoa = transport(() => ({ __status: 401, message: 'Empresa, e-mail ou senha inválidos.' }));
+  await assert.rejects(() => client(daPessoa.fetchImpl).login({}), IdentityRejectedError);
+});

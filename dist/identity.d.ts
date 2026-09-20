@@ -310,6 +310,15 @@ export declare class IdentityClient {
         id: string;
         temporary_password: string;
     }>;
+    /**
+     * A introspecção nunca recusa um token com 4xx — token inválido é `active:false`
+     * em 200. Então qualquer 4xx aqui é problema do produto, tipicamente credencial
+     * de serviço errada, e precisa falhar fechado como indisponibilidade.
+     *
+     * Deixar a recusa atravessar seria desastroso: o produto repassaria 401 ao
+     * navegador e um erro de configuração no deploy deslogaria todo mundo de uma
+     * vez, em vez de devolver indisponibilidade enquanto alguém conserta.
+     */
     private ask;
     /**
      * Um único ponto de rede. A distinção que ele preserva é a que importa: 4xx é

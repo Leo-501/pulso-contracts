@@ -228,11 +228,27 @@ export class IdentityClient {
     resetAccountPassword(token, id) {
         return this.call('/api/users/' + encodeURIComponent(id) + '/password', resetSchema, { method: 'POST', session: token });
     }
+    /**
+     * A introspecção nunca recusa um token com 4xx — token inválido é `active:false`
+     * em 200. Então qualquer 4xx aqui é problema do produto, tipicamente credencial
+     * de serviço errada, e precisa falhar fechado como indisponibilidade.
+     *
+     * Deixar a recusa atravessar seria desastroso: o produto repassaria 401 ao
+     * navegador e um erro de configuração no deploy deslogaria todo mundo de uma
+     * vez, em vez de devolver indisponibilidade enquanto alguém conserta.
+     */
     async ask(token, kind) {
-        return this.call('/api/introspect', introspectionSchema, {
-            method: 'POST',
-            body: { token, kind },
-        });
+        try {
+            return await this.call('/api/introspect', introspectionSchema, {
+                method: 'POST',
+                body: { token, kind },
+            });
+        }
+        catch (error) {
+            if (error instanceof IdentityRejectedError)
+                throw new IdentityUnavailableError(error);
+            throw error;
+        }
     }
     /**
      * Um único ponto de rede. A distinção que ele preserva é a que importa: 4xx é
@@ -265,6 +281,10 @@ export class IdentityClient {
         }
         if (response.status >= 400 && response.status < 500) {
             const payload = (await response.json().catch(() => ({})));
+            // A identidade marca a falha da credencial do produto. Ela não é recusa do
+            // usuário: ninguém acerta a senha se o produto não consegue nem perguntar.
+            if (payload.code === 'service_credential')
+                throw new IdentityUnavailableError(new Error(payload.message ?? 'credencial de serviço'));
             throw new IdentityRejectedError(response.status, payload.message ?? 'Não foi possível concluir a operação.', payload.issues);
         }
         if (!response.ok)
