@@ -20,10 +20,14 @@ O cliente de sincronização mora aqui, e não no repositório do aplicativo, po
 O pacote é distribuído por tag git, sem registry:
 
 ```sh
-pnpm add github:Leo-501/pulso-contracts#v0.2.0
+pnpm add github:Leo-501/pulso-contracts#v0.4.0
 ```
 
-O `prepare` compila `dist/` na instalação, então os consumidores recebem JavaScript e `.d.ts` — não o TypeScript cru. É por isso que o Metro do aplicativo não precisa mais do `resolveRequest` customizado que existia antes da divisão.
+O `dist/` compilado é **versionado neste repositório**, e o pacote não tem script `prepare`. Os consumidores recebem JavaScript e `.d.ts` prontos — não o TypeScript cru. É por isso que o Metro do aplicativo não precisa do `resolveRequest` customizado que existia antes da divisão.
+
+Versionar artefato de build não é bonito, e a escolha tem motivo concreto. Com `prepare`, o pnpm 12 classifica o pacote como dependência git que executa build e exige declará-lo em `allowBuilds` **com o SHA exato do commit**, em cada consumidor, a cada tag nova — o nome do pacote não é aceito. Com três consumidores isso vira três edições por release, e o esquecimento quebra a instalação.
+
+O risco da troca é o `dist` envelhecer sem ninguém notar, que é falha silenciosa e pior que a anterior. `tests/dist.test.ts` fecha esse risco: recompila em diretório temporário e compara arquivo por arquivo. Alterar `src` sem rodar `pnpm build` derruba a suíte com a instrução do que fazer.
 
 ### `zod` é peer dependency, de propósito
 
@@ -31,7 +35,7 @@ O filtro de exceções da API faz `error instanceof ZodError`. Se o pacote troux
 
 ## Disciplina de versionamento
 
-Toda mudança publica uma tag nova. Os dois consumidores apontam para tags, nunca para `main`.
+Toda mudança publica uma tag nova. Os consumidores apontam para tags, nunca para `main`. Rode `pnpm build` e comite o `dist` junto com a mudança em `src` — a suíte recusa o contrário.
 
 | Tipo de mudança | Efeito |
 |---|---|
@@ -39,7 +43,7 @@ Toda mudança publica uma tag nova. Os dois consumidores apontam para tags, nunc
 | Entidade nova no `pull`, operação nova no envelope, schema novo | minor |
 | Alteração de significado de campo existente, remoção, mudança em `protocol` | major, com plano de transição |
 
-Antes de publicar uma tag: `pnpm typecheck && pnpm test`. Depois de publicar, atualize a referência nos dois repositórios **na mesma leva** e rode os testes de lá — em especial `tests/mobile-api.test.ts` no `pulso-cmms`, que é o único teste que exercita servidor e cliente juntos.
+Antes de publicar uma tag: `pnpm typecheck && pnpm test`. Depois de publicar, atualize a referência em todos os consumidores **na mesma leva** e rode os testes de lá — em especial `tests/mobile-api.test.ts` no `pulso-cmms`, que é o único teste que exercita servidor e cliente juntos.
 
 A regra que não pode ser quebrada: um aplicativo já instalado no aparelho do técnico continua falando com a API antiga. Mudança no significado de um campo existente sem `protocol` novo corrompe a fila offline de quem não atualizou.
 

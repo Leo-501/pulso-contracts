@@ -1,6 +1,6 @@
 {
   "name": "@pulso/contracts",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Contrato compartilhado do Pulso CMMS: regras de domínio, protocolo mobile e cliente de referência de sincronização.",
   "private": false,
   "license": "UNLICENSED",
@@ -33,7 +33,6 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "prepare": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test --test-concurrency=1 tests/*.test.ts",
     "format": "prettier --write ."
