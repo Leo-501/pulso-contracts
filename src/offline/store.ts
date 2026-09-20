@@ -1,184 +1,229 @@
 import {
-  mobileOperationSchema,
-  mobileScope,
-  type CachedRecord,
-  type ManifestEntry,
-  type MobileOperation,
-  type MobileOrder,
-  type PullResponse,
+  esquemaOperacaoAplicativo,
+  escopoAplicativo,
+  type ItemManifesto,
+  type OperacaoAplicativo,
+  type OrdemAplicativo,
+  type RegistroLocal,
+  type RespostaDownload,
 } from '../mobile.js';
 
-export type SqlValue = string | number | null;
-export interface SqlExecutor {
-  run(sql: string, params?: SqlValue[]): Promise<void>;
-  all<T>(sql: string, params?: SqlValue[]): Promise<T[]>;
+export type ValorSql = string | number | null;
+export interface ExecutorSql {
+  executar(sql: string, parametros?: ValorSql[]): Promise<void>;
+  consultar<T>(sql: string, parametros?: ValorSql[]): Promise<T[]>;
 }
-export interface SqlDatabase extends SqlExecutor {
-  exec(sql: string): Promise<void>;
-  transaction<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T>;
+export interface BancoSql extends ExecutorSql {
+  script(sql: string): Promise<void>;
+  transacao<T>(fn: (tx: ExecutorSql) => Promise<T>): Promise<T>;
 }
-export type OutboxEntry = {
+
+export type ItemFila = {
   id: string;
-  kind: MobileOperation['kind'];
-  order_id: string | null;
-  payload: string;
-  state: 'pending' | 'confirmed' | 'conflict' | 'rejected' | 'superseded' | 'dismissed';
-  error: string | null;
-  receipt: string | null;
-  created_at: string;
+  tipo: OperacaoAplicativo['tipo'];
+  ordem_id: string | null;
+  corpo: string;
+  situacao: 'pendente' | 'confirmada' | 'conflito' | 'rejeitada' | 'substituida' | 'arquivada';
+  erro: string | null;
+  recibo: string | null;
+  criado_em: string;
 };
 
-export class OfflineStore {
+export class BaseLocal {
   constructor(
-    public db: SqlDatabase,
-    public scope: string,
+    public db: BancoSql,
+    public escopo: string,
   ) {}
-  async init() {
-    await this.db.exec(`
-      CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS records (entity TEXT NOT NULL, id TEXT NOT NULL, etag TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY(entity,id));
-      CREATE TABLE IF NOT EXISTS outbox (
-        id TEXT PRIMARY KEY, kind TEXT NOT NULL, order_id TEXT, payload TEXT NOT NULL,
-        state TEXT NOT NULL DEFAULT 'pending', error TEXT, receipt TEXT, created_at TEXT NOT NULL
+
+  async iniciar() {
+    // Instalação anterior ao vocabulário em português. Criar as tabelas novas ao
+    // lado das antigas deixaria a fila de trabalho não enviado invisível, e
+    // perder trabalho de campo em silêncio é pior do que recusar a abrir.
+    const antigas = await this.db.consultar<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('outbox','records','metadata')",
+    );
+    if (antigas.length)
+      throw new Error(
+        'Este banco local é de uma versão anterior e pode conter registros ainda não enviados. ' +
+          'Sincronize pela versão antiga do aplicativo antes de atualizar.',
       );
-      CREATE UNIQUE INDEX IF NOT EXISTS one_unresolved_checklist ON outbox(order_id)
-        WHERE kind='order.checklist' AND state IN ('pending','conflict','rejected');
+
+    await this.db.script(`
+      CREATE TABLE IF NOT EXISTS metadados (chave TEXT PRIMARY KEY, valor TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS registros (entidade TEXT NOT NULL, id TEXT NOT NULL, etag TEXT NOT NULL, dados TEXT NOT NULL, PRIMARY KEY(entidade,id));
+      CREATE TABLE IF NOT EXISTS fila (
+        id TEXT PRIMARY KEY, tipo TEXT NOT NULL, ordem_id TEXT, corpo TEXT NOT NULL,
+        situacao TEXT NOT NULL DEFAULT 'pendente', erro TEXT, recibo TEXT, criado_em TEXT NOT NULL
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS um_checklist_pendente ON fila(ordem_id)
+        WHERE tipo='ordem.checklist' AND situacao IN ('pendente','conflito','rejeitada');
     `);
-    await this.db.transaction(async (tx) => {
-      const existing = (
-        await tx.all<{ value: string }>("SELECT value FROM metadata WHERE key='scope'")
+    await this.db.transacao(async (tx) => {
+      const atual = (
+        await tx.consultar<{ valor: string }>("SELECT valor FROM metadados WHERE chave='escopo'")
       )[0];
-      if (existing && existing.value !== this.scope)
+      if (atual && atual.valor !== this.escopo)
         throw new Error('O banco local pertence a outra conta ou unidade.');
-      await tx.run("INSERT OR IGNORE INTO metadata(key,value) VALUES('scope',?)", [this.scope]);
+      await tx.executar("INSERT OR IGNORE INTO metadados(chave,valor) VALUES('escopo',?)", [
+        this.escopo,
+      ]);
     });
     return this;
   }
-  async manifest(): Promise<ManifestEntry[]> {
-    return this.db.all<ManifestEntry>('SELECT entity,id,etag FROM records ORDER BY entity,id');
-  }
-  async records(): Promise<CachedRecord[]> {
-    const rows = await this.db.all<ManifestEntry & { data: string }>(
-      'SELECT * FROM records ORDER BY entity,id',
+
+  async manifesto(): Promise<ItemManifesto[]> {
+    return this.db.consultar<ItemManifesto>(
+      'SELECT entidade,id,etag FROM registros ORDER BY entidade,id',
     );
-    return rows.map((r) => ({ ...r, data: JSON.parse(r.data) }));
   }
-  async lastSync() {
+
+  async registros(): Promise<RegistroLocal[]> {
+    const linhas = await this.db.consultar<ItemManifesto & { dados: string }>(
+      'SELECT * FROM registros ORDER BY entidade,id',
+    );
+    return linhas.map((r) => ({ ...r, dados: JSON.parse(r.dados) }));
+  }
+
+  async ultimaSincronizacao() {
     return (
-      (await this.db.all<{ value: string }>("SELECT value FROM metadata WHERE key='last_sync'"))[0]
-        ?.value ?? null
+      (
+        await this.db.consultar<{ valor: string }>(
+          "SELECT valor FROM metadados WHERE chave='ultima_sincronizacao'",
+        )
+      )[0]?.valor ?? null
     );
   }
-  async apply(response: PullResponse) {
+
+  async aplicar(resposta: RespostaDownload) {
     if (
-      response.protocol !== 1 ||
-      response.scope !== this.scope ||
-      mobileScope(response.user) !== this.scope
+      resposta.protocolo !== 1 ||
+      resposta.escopo !== this.escopo ||
+      escopoAplicativo(resposta.pessoa) !== this.escopo
     )
       throw new Error('Resposta de sincronização de outra conta ou unidade.');
-    await this.db.transaction(async (tx) => {
-      for (const row of response.removed)
-        await tx.run('DELETE FROM records WHERE entity=? AND id=?', [row.entity, row.id]);
-      for (const row of response.upserts)
-        await tx.run(
-          'INSERT INTO records(entity,id,etag,data) VALUES(?,?,?,?) ON CONFLICT(entity,id) DO UPDATE SET etag=excluded.etag,data=excluded.data',
-          [row.entity, row.id, row.etag, JSON.stringify(row.data)],
+    await this.db.transacao(async (tx) => {
+      for (const linha of resposta.removidos)
+        await tx.executar('DELETE FROM registros WHERE entidade=? AND id=?', [
+          linha.entidade,
+          linha.id,
+        ]);
+      for (const linha of resposta.gravar)
+        await tx.executar(
+          'INSERT INTO registros(entidade,id,etag,dados) VALUES(?,?,?,?) ON CONFLICT(entidade,id) DO UPDATE SET etag=excluded.etag,dados=excluded.dados',
+          [linha.entidade, linha.id, linha.etag, JSON.stringify(linha.dados)],
         );
-      await tx.run(
-        "INSERT INTO metadata(key,value) VALUES('last_sync',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        [response.server_time],
+      await tx.executar(
+        "INSERT INTO metadados(chave,valor) VALUES('ultima_sincronizacao',?) ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+        [resposta.hora_servidor],
       );
     });
   }
-  async enqueue(input: MobileOperation) {
-    const operation = mobileOperationSchema.parse(input);
-    await this.db.transaction((tx) => this.insert(tx, operation));
+
+  async enfileirar(entrada: OperacaoAplicativo) {
+    const operacao = esquemaOperacaoAplicativo.parse(entrada);
+    await this.db.transacao((tx) => this.inserir(tx, operacao));
   }
-  private async insert(tx: SqlExecutor, operation: MobileOperation) {
-    const existing = (
-      await tx.all<OutboxEntry>('SELECT * FROM outbox WHERE id=?', [operation.id])
+
+  private async inserir(tx: ExecutorSql, operacao: OperacaoAplicativo) {
+    const existente = (
+      await tx.consultar<ItemFila>('SELECT * FROM fila WHERE id=?', [operacao.id])
     )[0];
-    if (existing) {
-      if (existing.payload !== JSON.stringify(operation))
+    if (existente) {
+      if (existente.corpo !== JSON.stringify(operacao))
         throw new Error('Esta identificação já foi usada para outro registro.');
       return;
     }
     if (
-      operation.kind === 'order.checklist' &&
+      operacao.tipo === 'ordem.checklist' &&
       (
-        await tx.all(
-          "SELECT id FROM outbox WHERE order_id=? AND state IN ('pending','conflict','rejected')",
-          [operation.order_id],
+        await tx.consultar(
+          "SELECT id FROM fila WHERE ordem_id=? AND situacao IN ('pendente','conflito','rejeitada')",
+          [operacao.ordem_id],
         )
       ).length
     )
       throw new Error('Esta OS já tem respostas aguardando sincronização ou revisão.');
-    await tx.run('INSERT INTO outbox(id,kind,order_id,payload,created_at) VALUES(?,?,?,?,?)', [
-      operation.id,
-      operation.kind,
-      operation.kind === 'order.checklist' ? operation.order_id : null,
-      JSON.stringify(operation),
-      new Date().toISOString(),
-    ]);
-  }
-  async queue(): Promise<OutboxEntry[]> {
-    return this.db.all('SELECT * FROM outbox ORDER BY created_at,id');
-  }
-  async mark(
-    id: string,
-    state: 'confirmed' | 'conflict' | 'rejected',
-    error: string | null,
-    receipt: unknown = null,
-  ) {
-    await this.db.run(
-      "UPDATE outbox SET state=?,error=?,receipt=? WHERE id=? AND state='pending'",
-      [state, error, receipt == null ? null : JSON.stringify(receipt), id],
+    await tx.executar(
+      'INSERT INTO fila(id,tipo,ordem_id,corpo,criado_em) VALUES(?,?,?,?,?)',
+      [
+        operacao.id,
+        operacao.tipo,
+        operacao.tipo === 'ordem.checklist' ? operacao.ordem_id : null,
+        JSON.stringify(operacao),
+        new Date().toISOString(),
+      ],
     );
   }
-  async lockCache() {
-    // Keep the encrypted outbox for reauthentication by the SAME scope. Stop exposing downloaded records.
-    await this.db.transaction(async (tx) => {
-      await tx.run('DELETE FROM records');
-      await tx.run("DELETE FROM metadata WHERE key='last_sync'");
+
+  async fila(): Promise<ItemFila[]> {
+    return this.db.consultar('SELECT * FROM fila ORDER BY criado_em,id');
+  }
+
+  async marcar(
+    id: string,
+    situacao: 'confirmada' | 'conflito' | 'rejeitada',
+    erro: string | null,
+    recibo: unknown = null,
+  ) {
+    await this.db.executar(
+      "UPDATE fila SET situacao=?,erro=?,recibo=? WHERE id=? AND situacao='pendente'",
+      [situacao, erro, recibo == null ? null : JSON.stringify(recibo), id],
+    );
+  }
+
+  /**
+   * Guarda a fila cifrada para nova autenticação do **mesmo** escopo, e para de
+   * expor o que foi baixado. Trabalho de campo ainda não enviado não pode sumir
+   * porque a sessão expirou.
+   */
+  async bloquearCache() {
+    await this.db.transacao(async (tx) => {
+      await tx.executar('DELETE FROM registros');
+      await tx.executar("DELETE FROM metadados WHERE chave='ultima_sincronizacao'");
     });
   }
-  async dismiss(id: string) {
-    await this.db.run(
-      "UPDATE outbox SET state='dismissed' WHERE id=? AND state IN ('conflict','rejected')",
+
+  async arquivar(id: string) {
+    await this.db.executar(
+      "UPDATE fila SET situacao='arquivada' WHERE id=? AND situacao IN ('conflito','rejeitada')",
       [id],
     );
   }
-  async reapplyChecklist(id: string, newId: string) {
-    await this.db.transaction(async (tx) => {
-      const entry = (
-        await tx.all<OutboxEntry>("SELECT * FROM outbox WHERE id=? AND state='conflict'", [id])
+
+  async reaplicarChecklist(id: string, novoId: string) {
+    await this.db.transacao(async (tx) => {
+      const item = (
+        await tx.consultar<ItemFila>("SELECT * FROM fila WHERE id=? AND situacao='conflito'", [id])
       )[0];
-      if (!entry) throw new Error('Atualize a fila antes de revisar este conflito.');
-      const op = mobileOperationSchema.parse(JSON.parse(entry.payload));
-      if (op.kind !== 'order.checklist')
+      if (!item) throw new Error('Atualize a fila antes de revisar este conflito.');
+      const operacao = esquemaOperacaoAplicativo.parse(JSON.parse(item.corpo));
+      if (operacao.tipo !== 'ordem.checklist')
         throw new Error('Esta operação exige correção pelo solicitante.');
-      const row = (
-        await tx.all<{ data: string }>("SELECT data FROM records WHERE entity='order' AND id=?", [
-          op.order_id,
-        ])
+      const linha = (
+        await tx.consultar<{ dados: string }>(
+          "SELECT dados FROM registros WHERE entidade='ordem' AND id=?",
+          [operacao.ordem_id],
+        )
       )[0];
-      const order: MobileOrder | undefined = row && JSON.parse(row.data);
-      if (!order || !['in_progress', 'paused'].includes(order.status))
+      const ordem: OrdemAplicativo | undefined = linha && JSON.parse(linha.dados);
+      if (!ordem || !['em_execucao', 'pausada'].includes(ordem.situacao))
         throw new Error('A OS não está disponível para preencher o checklist.');
       if (
-        Object.keys(op.body.answers).some((key) => !order.checklist.some((item) => item.id === key))
+        Object.keys(operacao.corpo.respostas).some(
+          (chave) => !ordem.checklist.some((item) => item.id === chave),
+        )
       )
         throw new Error('Os itens do checklist mudaram. Consulte o gestor antes de reaplicar.');
-      const replacement = mobileOperationSchema.parse({
-        ...op,
-        id: newId,
-        body: { ...op.body, version: order.version },
+      const substituta = esquemaOperacaoAplicativo.parse({
+        ...operacao,
+        id: novoId,
+        corpo: { ...operacao.corpo, versao: ordem.versao },
       });
-      await tx.run("UPDATE outbox SET state='superseded',receipt=? WHERE id=?", [
-        JSON.stringify({ replacement: newId }),
+      await tx.executar("UPDATE fila SET situacao='substituida',recibo=? WHERE id=?", [
+        JSON.stringify({ substituta: novoId }),
         id,
       ]);
-      await this.insert(tx, replacement);
+      await this.inserir(tx, substituta);
     });
   }
 }

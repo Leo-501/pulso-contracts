@@ -1,199 +1,199 @@
 import { z } from 'zod';
-export declare const roles: readonly ["admin", "manager", "technician", "operator", "storekeeper", "viewer"];
-export type Role = (typeof roles)[number];
-export declare const statuses: readonly ["open", "planned", "in_progress", "paused", "review", "closed", "cancelled"];
-export type Status = (typeof statuses)[number];
-export declare const statusLabels: Record<Status, string>;
-export declare const priorityLabels: Record<string, string>;
-export declare const roleLabels: Record<Role, string>;
-export declare const priority: z.ZodEnum<{
-    critical: "critical";
-    high: "high";
-    medium: "medium";
-    low: "low";
+export declare const papeis: readonly ["administrador", "gestor", "tecnico", "solicitante", "almoxarife", "consulta"];
+export type Papel = (typeof papeis)[number];
+export declare const situacoes: readonly ["aberta", "planejada", "em_execucao", "pausada", "validacao", "concluida", "cancelada"];
+export type Situacao = (typeof situacoes)[number];
+export declare const rotulosSituacao: Record<Situacao, string>;
+export declare const rotulosPrioridade: Record<string, string>;
+export declare const rotulosPapel: Record<Papel, string>;
+export declare const prioridade: z.ZodEnum<{
+    critica: "critica";
+    alta: "alta";
+    media: "media";
+    baixa: "baixa";
 }>;
-export declare const idSchema: z.ZodString;
-export declare const dateSchema: z.ZodString;
-export declare const loginSchema: z.ZodObject<{
-    company: z.ZodString;
+export declare const esquemaId: z.ZodString;
+export declare const esquemaData: z.ZodString;
+export declare const esquemaLogin: z.ZodObject<{
+    empresa: z.ZodString;
     email: z.ZodEmail;
-    password: z.ZodString;
+    senha: z.ZodString;
 }, z.core.$strict>;
-export declare const assetSchema: z.ZodObject<{
-    code: z.ZodString;
-    name: z.ZodString;
-    location: z.ZodString;
-    criticality: z.ZodDefault<z.ZodEnum<{
-        critical: "critical";
-        high: "high";
-        medium: "medium";
-        low: "low";
+export declare const esquemaAtivo: z.ZodObject<{
+    codigo: z.ZodString;
+    nome: z.ZodString;
+    local: z.ZodString;
+    criticidade: z.ZodDefault<z.ZodEnum<{
+        critica: "critica";
+        alta: "alta";
+        media: "media";
+        baixa: "baixa";
     }>>;
-    manufacturer: z.ZodDefault<z.ZodString>;
-    model: z.ZodDefault<z.ZodString>;
+    fabricante: z.ZodDefault<z.ZodString>;
+    modelo: z.ZodDefault<z.ZodString>;
 }, z.core.$strict>;
-export declare const requestSchema: z.ZodObject<{
-    asset_id: z.ZodString;
-    title: z.ZodString;
-    description: z.ZodString;
-    machine_stopped: z.ZodDefault<z.ZodBoolean>;
-    observed_at: z.ZodOptional<z.ZodISODateTime>;
+export declare const esquemaSolicitacao: z.ZodObject<{
+    ativo_id: z.ZodString;
+    titulo: z.ZodString;
+    descricao: z.ZodString;
+    maquina_parada: z.ZodDefault<z.ZodBoolean>;
+    observado_em: z.ZodOptional<z.ZodISODateTime>;
 }, z.core.$strict>;
-export declare const orderSchema: z.ZodObject<{
-    asset_id: z.ZodString;
-    title: z.ZodString;
-    description: z.ZodDefault<z.ZodString>;
-    priority: z.ZodEnum<{
-        critical: "critical";
-        high: "high";
-        medium: "medium";
-        low: "low";
+export declare const esquemaOrdem: z.ZodObject<{
+    ativo_id: z.ZodString;
+    titulo: z.ZodString;
+    descricao: z.ZodDefault<z.ZodString>;
+    prioridade: z.ZodEnum<{
+        critica: "critica";
+        alta: "alta";
+        media: "media";
+        baixa: "baixa";
     }>;
-    due_date: z.ZodString;
-    assigned_to: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-    type: z.ZodDefault<z.ZodEnum<{
-        corrective: "corrective";
-        preventive: "preventive";
+    prazo: z.ZodString;
+    responsavel_id: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    tipo: z.ZodDefault<z.ZodEnum<{
+        corretiva: "corretiva";
+        preventiva: "preventiva";
     }>>;
 }, z.core.$strict>;
-export declare const triageSchema: z.ZodObject<{
-    action: z.ZodEnum<{
-        approve: "approve";
-        reject: "reject";
+export declare const esquemaTriagem: z.ZodObject<{
+    acao: z.ZodEnum<{
+        aprovar: "aprovar";
+        rejeitar: "rejeitar";
     }>;
-    priority: z.ZodDefault<z.ZodEnum<{
-        critical: "critical";
-        high: "high";
-        medium: "medium";
-        low: "low";
+    prioridade: z.ZodDefault<z.ZodEnum<{
+        critica: "critica";
+        alta: "alta";
+        media: "media";
+        baixa: "baixa";
     }>>;
-    due_date: z.ZodOptional<z.ZodString>;
-    assigned_to: z.ZodDefault<z.ZodNullable<z.ZodString>>;
-    reason: z.ZodDefault<z.ZodString>;
+    prazo: z.ZodOptional<z.ZodString>;
+    responsavel_id: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    motivo: z.ZodDefault<z.ZodString>;
 }, z.core.$strict>;
-export declare const transitionSchema: z.ZodObject<{
-    status: z.ZodEnum<{
-        open: "open";
-        planned: "planned";
-        in_progress: "in_progress";
-        paused: "paused";
-        review: "review";
-        closed: "closed";
-        cancelled: "cancelled";
+export declare const esquemaTransicao: z.ZodObject<{
+    situacao: z.ZodEnum<{
+        aberta: "aberta";
+        planejada: "planejada";
+        em_execucao: "em_execucao";
+        pausada: "pausada";
+        validacao: "validacao";
+        concluida: "concluida";
+        cancelada: "cancelada";
     }>;
-    version: z.ZodNumber;
-    note: z.ZodDefault<z.ZodString>;
+    versao: z.ZodNumber;
+    observacao: z.ZodDefault<z.ZodString>;
 }, z.core.$strict>;
-export declare const partSchema: z.ZodObject<{
-    code: z.ZodString;
-    name: z.ZodString;
-    unit: z.ZodDefault<z.ZodEnum<{
+export declare const esquemaPeca: z.ZodObject<{
+    codigo: z.ZodString;
+    nome: z.ZodString;
+    unidade_medida: z.ZodDefault<z.ZodEnum<{
         un: "un";
         L: "L";
         kg: "kg";
         m: "m";
     }>>;
-    minimum: z.ZodDefault<z.ZodNumber>;
+    minimo: z.ZodDefault<z.ZodNumber>;
 }, z.core.$strict>;
-export declare const movementSchema: z.ZodObject<{
-    kind: z.ZodEnum<{
-        receipt: "receipt";
-        issue: "issue";
-        return: "return";
-        adjustment: "adjustment";
+export declare const esquemaMovimentacao: z.ZodObject<{
+    tipo: z.ZodEnum<{
+        entrada: "entrada";
+        saida: "saida";
+        devolucao: "devolucao";
+        ajuste: "ajuste";
     }>;
-    quantity: z.ZodNumber;
-    reason: z.ZodString;
-    work_order_id: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    quantidade: z.ZodNumber;
+    motivo: z.ZodString;
+    ordem_id: z.ZodDefault<z.ZodNullable<z.ZodString>>;
 }, z.core.$strict>;
-export declare const planSchema: z.ZodObject<{
-    asset_id: z.ZodString;
-    name: z.ZodString;
-    frequency: z.ZodEnum<{
-        weekly: "weekly";
-        monthly: "monthly";
+export declare const esquemaPlano: z.ZodObject<{
+    ativo_id: z.ZodString;
+    nome: z.ZodString;
+    frequencia: z.ZodEnum<{
+        semanal: "semanal";
+        mensal: "mensal";
     }>;
-    interval: z.ZodDefault<z.ZodNumber>;
-    anchor_date: z.ZodString;
-    lead_days: z.ZodDefault<z.ZodNumber>;
-    assigned_to: z.ZodDefault<z.ZodNullable<z.ZodString>>;
+    intervalo: z.ZodDefault<z.ZodNumber>;
+    data_base: z.ZodString;
+    dias_antecedencia: z.ZodDefault<z.ZodNumber>;
+    responsavel_id: z.ZodDefault<z.ZodNullable<z.ZodString>>;
     checklist: z.ZodArray<z.ZodString>;
 }, z.core.$strict>;
-export declare const checklistSchema: z.ZodObject<{
-    version: z.ZodNumber;
-    answers: z.ZodRecord<z.ZodString, z.ZodEnum<{
+export declare const esquemaChecklist: z.ZodObject<{
+    versao: z.ZodNumber;
+    respostas: z.ZodRecord<z.ZodString, z.ZodEnum<{
         ok: "ok";
         nok: "nok";
         na: "na";
     }>>;
 }, z.core.$strict>;
-export declare function allowedTransitions(status: Status, role: Role): Status[];
-export declare function canManage(role: Role): role is "admin" | "manager";
-export declare function localDate(now?: Date, timezone?: string): string;
-export declare function addDays(date: string, days: number): string;
-export declare function occurrenceDate(anchor: string, frequency: 'weekly' | 'monthly', interval: number, index: number): string;
-export declare const assetUpdateSchema: z.ZodObject<{
-    code: z.ZodOptional<z.ZodString>;
-    name: z.ZodOptional<z.ZodString>;
-    location: z.ZodOptional<z.ZodString>;
-    criticality: z.ZodOptional<z.ZodDefault<z.ZodEnum<{
-        critical: "critical";
-        high: "high";
-        medium: "medium";
-        low: "low";
+export declare function transicoesPermitidas(situacao: Situacao, papel: Papel): Situacao[];
+export declare function podeGerenciar(papel: Papel): papel is "administrador" | "gestor";
+export declare function dataLocal(agora?: Date, fuso?: string): string;
+export declare function somarDias(data: string, dias: number): string;
+export declare function dataOcorrencia(base: string, frequencia: 'semanal' | 'mensal', intervalo: number, indice: number): string;
+export declare const esquemaAtivoEdicao: z.ZodObject<{
+    codigo: z.ZodOptional<z.ZodString>;
+    nome: z.ZodOptional<z.ZodString>;
+    local: z.ZodOptional<z.ZodString>;
+    criticidade: z.ZodOptional<z.ZodDefault<z.ZodEnum<{
+        critica: "critica";
+        alta: "alta";
+        media: "media";
+        baixa: "baixa";
     }>>>;
-    manufacturer: z.ZodOptional<z.ZodDefault<z.ZodString>>;
-    model: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+    fabricante: z.ZodOptional<z.ZodDefault<z.ZodString>>;
+    modelo: z.ZodOptional<z.ZodDefault<z.ZodString>>;
 }, z.core.$strict>;
-export declare const partUpdateSchema: z.ZodObject<{
-    code: z.ZodOptional<z.ZodString>;
-    name: z.ZodOptional<z.ZodString>;
-    unit: z.ZodOptional<z.ZodDefault<z.ZodEnum<{
+export declare const esquemaPecaEdicao: z.ZodObject<{
+    codigo: z.ZodOptional<z.ZodString>;
+    nome: z.ZodOptional<z.ZodString>;
+    unidade_medida: z.ZodOptional<z.ZodDefault<z.ZodEnum<{
         un: "un";
         L: "L";
         kg: "kg";
         m: "m";
     }>>>;
-    minimum: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
+    minimo: z.ZodOptional<z.ZodDefault<z.ZodNumber>>;
 }, z.core.$strict>;
-export declare const planUpdateSchema: z.ZodObject<{
-    name: z.ZodOptional<z.ZodString>;
-    lead_days: z.ZodOptional<z.ZodNumber>;
-    assigned_to: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+export declare const esquemaPlanoEdicao: z.ZodObject<{
+    nome: z.ZodOptional<z.ZodString>;
+    dias_antecedencia: z.ZodOptional<z.ZodNumber>;
+    responsavel_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
 }, z.core.$strict>;
-export declare const activationSchema: z.ZodObject<{
-    active: z.ZodBoolean;
+export declare const esquemaAtivacao: z.ZodObject<{
+    ativo: z.ZodBoolean;
 }, z.core.$strict>;
-export declare const passwordSchema: z.ZodObject<{
-    current: z.ZodString;
-    next: z.ZodString;
+export declare const esquemaSenha: z.ZodObject<{
+    atual: z.ZodString;
+    nova: z.ZodString;
 }, z.core.$strict>;
-export declare const userSchema: z.ZodObject<{
-    name: z.ZodString;
+export declare const esquemaPessoa: z.ZodObject<{
+    nome: z.ZodString;
     email: z.ZodEmail;
-    role: z.ZodEnum<{
-        admin: "admin";
-        manager: "manager";
-        technician: "technician";
-        operator: "operator";
-        storekeeper: "storekeeper";
-        viewer: "viewer";
+    papel: z.ZodEnum<{
+        administrador: "administrador";
+        gestor: "gestor";
+        tecnico: "tecnico";
+        solicitante: "solicitante";
+        almoxarife: "almoxarife";
+        consulta: "consulta";
     }>;
-    site_ids: z.ZodArray<z.ZodString>;
+    unidade_ids: z.ZodArray<z.ZodString>;
 }, z.core.$strict>;
-export declare const membershipSchema: z.ZodObject<{
-    role: z.ZodOptional<z.ZodEnum<{
-        admin: "admin";
-        manager: "manager";
-        technician: "technician";
-        operator: "operator";
-        storekeeper: "storekeeper";
-        viewer: "viewer";
+export declare const esquemaVinculo: z.ZodObject<{
+    papel: z.ZodOptional<z.ZodEnum<{
+        administrador: "administrador";
+        gestor: "gestor";
+        tecnico: "tecnico";
+        solicitante: "solicitante";
+        almoxarife: "almoxarife";
+        consulta: "consulta";
     }>>;
-    active: z.ZodOptional<z.ZodBoolean>;
-    site_ids: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    ativo: z.ZodOptional<z.ZodBoolean>;
+    unidade_ids: z.ZodOptional<z.ZodArray<z.ZodString>>;
 }, z.core.$strict>;
-export declare const siteSchema: z.ZodObject<{
-    site_id: z.ZodString;
+export declare const esquemaUnidade: z.ZodObject<{
+    unidade_id: z.ZodString;
 }, z.core.$strict>;
 //# sourceMappingURL=index.d.ts.map
