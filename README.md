@@ -11,6 +11,7 @@ Este repositório existe porque os dois produtos passaram a viver separados. Ant
 | `@pulso/contracts` | Papéis, estados, transições permitidas, schemas zod das mutações, cálculo de ocorrência de plano e datas por fuso. | API, painel web, aplicativo |
 | `@pulso/contracts/mobile` | Protocolo 1: login mobile, manifesto, envelope de operações, tipos de `pull` e leitura de QR. | API, aplicativo |
 | `@pulso/contracts/identity` | Contrato do serviço de identidade e o `IdentityClient`: introspecção com cache curto, envio compartilhado e falha fechada, mais as rotas de sessão, contas e quadro de pessoas. | `pulso-identity` e todo produto do portfólio |
+| `@pulso/contracts/identity/testing` | Identidade de mentira em memória, na forma de um `fetch`, e a bateria de conformidade que a mantém fiel ao serviço de verdade. | suíte de todo produto que depende de identidade |
 | `@pulso/contracts/offline` | Cliente de referência: `OfflineStore` (cache + outbox) e `SyncEngine` (política de reenvio, conflito e bloqueio). | Aplicativo; API apenas em teste |
 | `@pulso/contracts/offline/testing` | Adaptador `node:sqlite` que implementa `SqlDatabase` para testes em Node. | Testes dos dois repositórios |
 
@@ -21,7 +22,7 @@ O cliente de sincronização mora aqui, e não no repositório do aplicativo, po
 O pacote é distribuído por tag git, sem registry:
 
 ```sh
-pnpm add github:Leo-501/pulso-contracts#v0.6.1
+pnpm add github:Leo-501/pulso-contracts#v0.7.0
 ```
 
 O `dist/` compilado é **versionado neste repositório**, e o pacote não tem script `prepare`. Os consumidores recebem JavaScript e `.d.ts` prontos — não o TypeScript cru. É por isso que o Metro do aplicativo não precisa do `resolveRequest` customizado que existia antes da divisão.

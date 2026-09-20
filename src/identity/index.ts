@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, roles, type Role } from './index.js';
+import { idSchema, roles, type Role } from '../index.js';
 
 // Contrato entre o serviço de identidade (`pulso-identity`) e os produtos que
 // dependem dele. O token da sessão é opaco de propósito: o produto não o

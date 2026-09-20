@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { type Role } from './index.js';
+import { type Role } from '../index.js';
 export declare const introspectionRequestSchema: z.ZodObject<{
     token: z.ZodString;
     kind: z.ZodDefault<z.ZodEnum<{
@@ -328,4 +328,4 @@ export declare class IdentityClient {
      */
     private call;
 }
-//# sourceMappingURL=identity.d.ts.map
+//# sourceMappingURL=index.d.ts.map

@@ -8,7 +8,7 @@ import {
   introspectionSchema,
   introspectionRequestSchema,
   type Introspection,
-} from '../src/identity.js';
+} from '../src/identity/index.js';
 
 const principal = () => ({
   id: randomUUID(),

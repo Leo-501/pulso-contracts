@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { idSchema, roles } from './index.js';
+import { idSchema, roles } from '../index.js';
 // Contrato entre o serviço de identidade (`pulso-identity`) e os produtos que
 // dependem dele. O token da sessão é opaco de propósito: o produto não o
 // interpreta, ele pergunta. É isso que preserva a revogação — uma sessão
@@ -292,4 +292,4 @@ export class IdentityClient {
         return schema.parse(await response.json());
     }
 }
-//# sourceMappingURL=identity.js.map
+//# sourceMappingURL=index.js.map

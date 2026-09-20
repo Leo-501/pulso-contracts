@@ -1,6 +1,6 @@
 {
   "name": "@pulso/contracts",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Contrato compartilhado do Pulso CMMS: regras de domínio, protocolo mobile e cliente de referência de sincronização.",
   "private": false,
   "license": "UNLICENSED",
@@ -23,8 +23,8 @@
       "default": "./dist/mobile.js"
     },
     "./identity": {
-      "types": "./dist/identity.d.ts",
-      "default": "./dist/identity.js"
+      "types": "./dist/identity/index.d.ts",
+      "default": "./dist/identity/index.js"
     },
     "./offline": {
       "types": "./dist/offline/index.d.ts",
@@ -33,6 +33,10 @@
     "./offline/testing": {
       "types": "./dist/offline/testing.d.ts",
       "default": "./dist/offline/testing.js"
+    },
+    "./identity/testing": {
+      "types": "./dist/identity/testing.d.ts",
+      "default": "./dist/identity/testing.js"
     }
   },
   "scripts": {
