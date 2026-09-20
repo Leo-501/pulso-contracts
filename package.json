@@ -1,6 +1,6 @@
 {
   "name": "@pulso/contracts",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Contrato compartilhado do Pulso CMMS: regras de domínio, protocolo mobile e cliente de referência de sincronização.",
   "private": false,
   "license": "UNLICENSED",

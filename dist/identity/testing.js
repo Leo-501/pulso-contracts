@@ -1,4 +1,5 @@
 import { loginSchema, membershipSchema, passwordSchema, siteSchema, userSchema, } from '../index.js';
+import { introspectionRequestSchema } from './index.js';
 import { mobileLoginSchema } from '../mobile.js';
 /**
  * Identidade de mentira, em memória, para a suíte de um produto.
@@ -184,8 +185,11 @@ export function createIdentityStub(spec) {
         .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
     function route(method, path, body, headers) {
         if (method === 'POST' && path === '/api/introspect') {
-            const kind = body?.kind === 'mobile' ? 'mobile' : 'web';
-            const session = alive(sessions.get(String(body?.token ?? '')), kind);
+            // Validar aqui não é zelo: token vazio é pedido malformado, não token
+            // inválido, e o serviço devolve 400. Sem isto o duplo era mais tolerante
+            // que a produção — foi o que a conformidade pegou na primeira execução.
+            const pedido = introspectionRequestSchema.parse(body);
+            const session = alive(sessions.get(pedido.token), pedido.kind);
             // Sempre 200. Token inválido é `active:false`, nunca erro: distinguir por
             // código transformaria a rota em oráculo para quem tivesse a credencial.
             if (!session)

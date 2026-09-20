@@ -103,12 +103,15 @@ export const identityConformance = [
     {
         name: 'token inválido é active:false, não erro',
         async run(t) {
-            for (const token of ['', 'nao-e-um-token', 'a'.repeat(64)]) {
+            for (const token of ['nao-e-um-token', 'a'.repeat(64), 'f'.repeat(64)]) {
                 const resposta = await introspectar(t, token);
                 ok(resposta.status < 400, `token ${JSON.stringify(token)} não pode virar erro`);
                 eq(resposta.data.active, false, 'token inválido');
                 eq(resposta.data.principal, undefined, 'nada acompanha uma negativa');
             }
+            // Token vazio é outra coisa: é corpo malformado, e o contrato exige min(1).
+            // Tratá-lo como token inválido esconderia um produto que perdeu o token.
+            eq((await introspectar(t, '')).status, 400, 'token vazio');
         },
     },
     {
