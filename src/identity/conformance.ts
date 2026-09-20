@@ -398,3 +398,31 @@ export const identityConformance: ConformanceCheck[] = [
     },
   },
 ];
+
+/**
+ * Acrescentada depois que o duplo recusou o quadro de pessoas pedido por uma
+ * sessão de aplicativo. O cliente não informava o tipo, e o serviço trata
+ * "sessão do tipo errado" como sessão inexistente — corretamente.
+ */
+identityConformance.push({
+  name: 'uma sessão de aplicativo serve as rotas de sessão quando o tipo vai junto',
+  async run(t) {
+    const mobile = await t.call('POST', '/api/auth/mobile/login', {
+      body: {
+        company: t.fixtures.company,
+        email: t.fixtures.technician,
+        password: t.fixtures.password,
+        device_id: globalThis.crypto.randomUUID(),
+      },
+    });
+    ok(mobile.status < 300, 'login do aplicativo');
+    const token = mobile.data.token;
+    // Sem o tipo, a pergunta é sobre uma sessão web que não existe.
+    eq((await t.call('GET', '/api/roster', { session: token })).status, 401, 'quadro sem o tipo');
+    const comTipo = await t.call('GET', '/api/roster', { session: token, kind: 'mobile' });
+    ok(comTipo.status < 300, 'quadro com o tipo: ' + JSON.stringify(comTipo.data));
+    ok(comTipo.data.people.length > 0, 'o quadro precisa vir preenchido');
+    const unidades = await t.call('GET', '/api/sites', { session: token, kind: 'mobile' });
+    ok(unidades.status < 300, 'unidades com o tipo');
+  },
+});

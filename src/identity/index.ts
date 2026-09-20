@@ -151,6 +151,13 @@ export type IdentityClientOptions = {
 const okSchema = z.object({ ok: z.boolean() });
 const resetSchema = z.object({ id: idSchema, temporary_password: z.string() });
 
+/**
+ * Tipo da sessão. O serviço separa sessão de painel de sessão de aplicativo, e
+ * toda rota que recebe uma sessão precisa saber qual das duas está chegando:
+ * perguntar pelo tipo errado é o mesmo que perguntar por uma sessão inexistente.
+ */
+export type SessionKind = 'web' | 'mobile';
+
 type Entry = { until: number; value: Extract<Introspection, { active: true }> };
 
 export class IdentityUnavailableError extends Error {
@@ -240,12 +247,12 @@ export class IdentityClient {
   mobileLogin(body: unknown) {
     return this.call('/api/auth/mobile/login', issuedSessionSchema, { method: 'POST', body });
   }
-  async logout(token: string) {
+  async logout(token: string, kind: SessionKind = 'web') {
     this.forget(token);
-    await this.call('/api/auth/logout', okSchema, { method: 'POST', session: token });
+    await this.call('/api/auth/logout', okSchema, { method: 'POST', session: token, kind });
   }
-  sites(token: string) {
-    return this.call('/api/sites', siteListSchema, { method: 'GET', session: token });
+  sites(token: string, kind: SessionKind = 'web') {
+    return this.call('/api/sites', siteListSchema, { method: 'GET', session: token, kind });
   }
   async switchSite(token: string, body: unknown) {
     const issued = await this.call('/api/auth/site', issuedSessionSchema, {
@@ -270,8 +277,8 @@ export class IdentityClient {
   }
 
   /** Quadro de pessoas da empresa da sessão, para o produto projetar. */
-  roster(token: string) {
-    return this.call('/api/roster', rosterSchema, { method: 'GET', session: token });
+  roster(token: string, kind: SessionKind = 'web') {
+    return this.call('/api/roster', rosterSchema, { method: 'GET', session: token, kind });
   }
   accounts(token: string) {
     return this.call('/api/users', accountListSchema, { method: 'GET', session: token });

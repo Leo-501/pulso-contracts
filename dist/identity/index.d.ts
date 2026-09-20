@@ -157,6 +157,12 @@ export type IdentityClientOptions = {
     timeoutMs?: number;
     fetch?: typeof globalThis.fetch;
 };
+/**
+ * Tipo da sessão. O serviço separa sessão de painel de sessão de aplicativo, e
+ * toda rota que recebe uma sessão precisa saber qual das duas está chegando:
+ * perguntar pelo tipo errado é o mesmo que perguntar por uma sessão inexistente.
+ */
+export type SessionKind = 'web' | 'mobile';
 export declare class IdentityUnavailableError extends Error {
     constructor(cause: unknown);
 }
@@ -236,8 +242,8 @@ export declare class IdentityClient {
             must_change_password: boolean;
         };
     }>;
-    logout(token: string): Promise<void>;
-    sites(token: string): Promise<{
+    logout(token: string, kind?: SessionKind): Promise<void>;
+    sites(token: string, kind?: SessionKind): Promise<{
         id: string;
         name: string;
         city: string;
@@ -262,7 +268,7 @@ export declare class IdentityClient {
         ok: boolean;
     }>;
     /** Quadro de pessoas da empresa da sessão, para o produto projetar. */
-    roster(token: string): Promise<{
+    roster(token: string, kind?: SessionKind): Promise<{
         generated_at: string;
         people: {
             id: string;

@@ -176,12 +176,12 @@ export class IdentityClient {
     mobileLogin(body) {
         return this.call('/api/auth/mobile/login', issuedSessionSchema, { method: 'POST', body });
     }
-    async logout(token) {
+    async logout(token, kind = 'web') {
         this.forget(token);
-        await this.call('/api/auth/logout', okSchema, { method: 'POST', session: token });
+        await this.call('/api/auth/logout', okSchema, { method: 'POST', session: token, kind });
     }
-    sites(token) {
-        return this.call('/api/sites', siteListSchema, { method: 'GET', session: token });
+    sites(token, kind = 'web') {
+        return this.call('/api/sites', siteListSchema, { method: 'GET', session: token, kind });
     }
     async switchSite(token, body) {
         const issued = await this.call('/api/auth/site', issuedSessionSchema, {
@@ -205,8 +205,8 @@ export class IdentityClient {
         return result;
     }
     /** Quadro de pessoas da empresa da sessão, para o produto projetar. */
-    roster(token) {
-        return this.call('/api/roster', rosterSchema, { method: 'GET', session: token });
+    roster(token, kind = 'web') {
+        return this.call('/api/roster', rosterSchema, { method: 'GET', session: token, kind });
     }
     accounts(token) {
         return this.call('/api/users', accountListSchema, { method: 'GET', session: token });
