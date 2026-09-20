@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { IdentityClient } from '../src/identity/index.js';
+import { ClienteIdentidade } from '../src/identity/index.js';
 import {
-  createIdentityStub,
-  identityConformance,
-  type ConformanceTarget,
+  criarIdentidadeDuplo,
+  conformidadeIdentidade,
+  type AlvoConformidade,
 } from '../src/identity/testing.js';
 
 const SENHA = 'Demo@2026!';
@@ -15,156 +15,166 @@ const SENHA = 'Demo@2026!';
  * — é isso que dá sentido a uma divergência.
  */
 const cenario = () =>
-  createIdentityStub({
-    client: { id: 'cmms', secret: 'segredo-de-demonstracao-nao-use-em-producao' },
-    tenants: [
+  criarIdentidadeDuplo({
+    cliente: { id: 'cmms', segredo: 'segredo-de-demonstracao-nao-use-em-producao' },
+    empresas: [
       {
-        slug: 'aurora',
-        name: 'Indústrias Aurora',
-        sites: [
-          { name: 'Unidade 01', city: 'Caçapava' },
-          { name: 'Unidade 02', city: 'Jacareí' },
+        apelido: 'aurora',
+        nome: 'Indústrias Aurora',
+        unidades: [
+          { nome: 'Unidade 01', cidade: 'Caçapava' },
+          { nome: 'Unidade 02', cidade: 'Jacareí' },
         ],
       },
-      { slug: 'horizonte', name: 'Fábrica Horizonte', sites: [{ name: 'Unidade 01', city: 'Taubaté' }] },
+      {
+        apelido: 'horizonte',
+        nome: 'Fábrica Horizonte',
+        unidades: [{ nome: 'Unidade 01', cidade: 'Taubaté' }],
+      },
     ],
-    people: [
+    pessoas: [
       // Só o gestor de Aurora alcança a segunda unidade, como no seed do serviço.
       {
         email: 'gestor@demo.local',
-        name: 'Marina Costa',
-        password: SENHA,
-        memberships: [
-          { tenant: 'aurora', role: 'manager', sites: ['Unidade 01', 'Unidade 02'] },
-          { tenant: 'horizonte', role: 'manager', sites: ['Unidade 01'] },
+        nome: 'Marina Costa',
+        senha: SENHA,
+        vinculos: [
+          { empresa: 'aurora', papel: 'gestor', unidades: ['Unidade 01', 'Unidade 02'] },
+          { empresa: 'horizonte', papel: 'gestor', unidades: ['Unidade 01'] },
         ],
       },
       {
         email: 'tecnico@demo.local',
-        name: 'Rafael Lima',
-        password: SENHA,
-        memberships: [
-          { tenant: 'aurora', role: 'technician', sites: ['Unidade 01'] },
-          { tenant: 'horizonte', role: 'technician', sites: ['Unidade 01'] },
+        nome: 'Rafael Lima',
+        senha: SENHA,
+        vinculos: [
+          { empresa: 'aurora', papel: 'tecnico', unidades: ['Unidade 01'] },
+          { empresa: 'horizonte', papel: 'tecnico', unidades: ['Unidade 01'] },
         ],
       },
       {
         email: 'admin@demo.local',
-        name: 'Ana Ribeiro',
-        password: SENHA,
-        memberships: [
-          { tenant: 'aurora', role: 'admin', sites: ['Unidade 01'] },
-          { tenant: 'horizonte', role: 'admin', sites: ['Unidade 01'] },
+        nome: 'Ana Ribeiro',
+        senha: SENHA,
+        vinculos: [
+          { empresa: 'aurora', papel: 'administrador', unidades: ['Unidade 01'] },
+          { empresa: 'horizonte', papel: 'administrador', unidades: ['Unidade 01'] },
         ],
       },
       {
         email: 'operador@demo.local',
-        name: 'Camila Santos',
-        password: SENHA,
-        memberships: [{ tenant: 'aurora', role: 'operator', sites: ['Unidade 01'] }],
+        nome: 'Camila Santos',
+        senha: SENHA,
+        vinculos: [{ empresa: 'aurora', papel: 'solicitante', unidades: ['Unidade 01'] }],
       },
     ],
   });
 
-function alvo(stub: ReturnType<typeof cenario>): ConformanceTarget {
+function alvo(duplo: ReturnType<typeof cenario>): AlvoConformidade {
   const chamar = async (
-    method: 'GET' | 'POST',
-    path: string,
-    options: { body?: unknown; session?: string; kind?: 'web' | 'mobile' } = {},
+    metodo: 'GET' | 'POST',
+    caminho: string,
+    opcoes: { corpo?: unknown; sessao?: string; tipo?: 'painel' | 'aplicativo' } = {},
     credencial = true,
   ) => {
-    const response = await stub.fetch('http://identidade.local' + path, {
-      method,
+    const resposta = await duplo.fetch('http://identidade.local' + caminho, {
+      method: metodo,
       headers: {
         'Content-Type': 'application/json',
-        'x-pulso-client': credencial ? stub.client.id : 'errado',
-        authorization: 'Bearer ' + (credencial ? stub.client.secret : 'errado'),
-        ...(options.session ? { 'x-pulso-session': options.session } : {}),
-        ...(options.kind ? { 'x-pulso-session-kind': options.kind } : {}),
+        'x-pulso-cliente': credencial ? duplo.cliente.id : 'errado',
+        authorization: 'Bearer ' + (credencial ? duplo.cliente.segredo : 'errado'),
+        ...(opcoes.sessao ? { 'x-pulso-sessao': opcoes.sessao } : {}),
+        ...(opcoes.tipo ? { 'x-pulso-tipo-sessao': opcoes.tipo } : {}),
       },
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+      ...(opcoes.corpo === undefined ? {} : { body: JSON.stringify(opcoes.corpo) }),
     } as RequestInit);
-    return { status: response.status, data: await response.json().catch(() => null) };
+    return { status: resposta.status, dados: await resposta.json().catch(() => null) };
   };
   return {
-    call: (method, path, options) => chamar(method, path, options),
-    callSemCredencial: (path, body) => chamar('POST', path, { body }, false),
-    fixtures: {
-      company: 'aurora',
-      password: SENHA,
-      admin: 'admin@demo.local',
+    chamar: (metodo, caminho, opcoes) => chamar(metodo, caminho, opcoes),
+    chamarSemCredencial: (caminho, corpo) => chamar('POST', caminho, { corpo }, false),
+    dados: {
+      empresa: 'aurora',
+      senha: SENHA,
+      administrador: 'admin@demo.local',
       duasUnidades: 'gestor@demo.local',
-      technician: 'tecnico@demo.local',
+      tecnico: 'tecnico@demo.local',
     },
   };
 }
 
-for (const check of identityConformance)
-  test(`conformidade do duplo: ${check.name}`, async () => {
-    await check.run(alvo(cenario()));
+for (const verificacao of conformidadeIdentidade)
+  test(`conformidade do duplo: ${verificacao.nome}`, async () => {
+    await verificacao.rodar(alvo(cenario()));
   });
 
 // --- O que é do duplo e não da bateria ------------------------------------
 
 test('o cliente real conversa com o duplo sem saber que é duplo', async () => {
-  const stub = cenario();
-  const cliente = new IdentityClient({
+  const duplo = cenario();
+  const cliente = new ClienteIdentidade({
     baseUrl: 'http://identidade.local',
-    clientId: stub.client.id,
-    clientSecret: stub.client.secret,
-    fetch: stub.fetch,
+    clienteId: duplo.cliente.id,
+    clienteSegredo: duplo.cliente.segredo,
+    fetch: duplo.fetch,
   });
-  const sessao = await cliente.login({
-    company: 'aurora',
+  const sessao = await cliente.entrar({
+    empresa: 'aurora',
     email: 'gestor@demo.local',
-    password: SENHA,
+    senha: SENHA,
   });
-  const contexto = await cliente.introspect(sessao.token);
-  assert.equal(contexto.active, true);
-  assert.equal(contexto.active && contexto.principal.role, 'manager');
-  const quadro = await cliente.roster(sessao.token);
-  assert.equal(quadro.people.length, 4);
-  await cliente.logout(sessao.token);
-  assert.equal((await cliente.introspect(sessao.token)).active, false);
+  const contexto = await cliente.introspectar(sessao.token);
+  assert.equal(contexto.ativa, true);
+  assert.equal(contexto.ativa && contexto.contexto.papel, 'gestor');
+  const quadro = await cliente.quadro(sessao.token);
+  assert.equal(quadro.pessoas.length, 4);
+  await cliente.sair(sessao.token);
+  assert.equal((await cliente.introspectar(sessao.token)).ativa, false);
 });
 
 test('os identificadores do cenário são estáveis e consultáveis pelo teste', async () => {
-  const stub = cenario();
-  const unidade = stub.siteId('aurora', 'Unidade 01');
+  const duplo = cenario();
+  const unidade = duplo.unidadeId('aurora', 'Unidade 01');
   assert.match(unidade, /^[0-9a-f-]{36}$/);
-  assert.notEqual(unidade, stub.siteId('aurora', 'Unidade 02'));
+  assert.notEqual(unidade, duplo.unidadeId('aurora', 'Unidade 02'));
   // A mesma unidade em empresas diferentes precisa ser identificador diferente.
-  assert.notEqual(unidade, stub.siteId('horizonte', 'Unidade 01'));
-  const sessao = await alvo(stub).call('POST', '/api/auth/login', {
-    body: { company: 'aurora', email: 'gestor@demo.local', password: SENHA },
+  assert.notEqual(unidade, duplo.unidadeId('horizonte', 'Unidade 01'));
+  const sessao = await alvo(duplo).chamar('POST', '/api/entrar', {
+    corpo: { empresa: 'aurora', email: 'gestor@demo.local', senha: SENHA },
   });
-  assert.equal(sessao.data.principal.site_id, unidade, 'a entrada é a primeira em ordem alfabética');
-  assert.equal(sessao.data.principal.tenant_id, stub.tenantId('aurora'));
-  assert.equal(sessao.data.principal.id, stub.userId('gestor@demo.local'));
+  assert.equal(
+    sessao.dados.contexto.unidade_id,
+    unidade,
+    'a entrada é a primeira em ordem alfabética',
+  );
+  assert.equal(sessao.dados.contexto.empresa_id, duplo.empresaId('aurora'));
+  assert.equal(sessao.dados.contexto.id, duplo.pessoaId('gestor@demo.local'));
 });
 
 test('expirar a sessão pelo duplo derruba o acesso sem esperar oito horas', async () => {
-  const stub = cenario();
-  const t = alvo(stub);
-  const sessao = await t.call('POST', '/api/auth/login', {
-    body: { company: 'aurora', email: 'admin@demo.local', password: SENHA },
+  const duplo = cenario();
+  const a = alvo(duplo);
+  const sessao = await a.chamar('POST', '/api/entrar', {
+    corpo: { empresa: 'aurora', email: 'admin@demo.local', senha: SENHA },
   });
-  assert.equal((await t.call('POST', '/api/introspect', { body: { token: sessao.data.token } })).data.active, true);
-  stub.expireAll();
-  assert.equal((await t.call('POST', '/api/introspect', { body: { token: sessao.data.token } })).data.active, false);
+  const perguntar = () =>
+    a.chamar('POST', '/api/introspeccao', { corpo: { token: sessao.dados.token } });
+  assert.equal((await perguntar()).dados.ativa, true);
+  duplo.expirarTudo();
+  assert.equal((await perguntar()).dados.ativa, false);
 });
 
 test('empresas diferentes não enxergam o quadro uma da outra', async () => {
-  const t = alvo(cenario());
-  const aurora = await t.call('POST', '/api/auth/login', {
-    body: { company: 'aurora', email: 'operador@demo.local', password: SENHA },
+  const a = alvo(cenario());
+  const aurora = await a.chamar('POST', '/api/entrar', {
+    corpo: { empresa: 'aurora', email: 'operador@demo.local', senha: SENHA },
   });
-  const horizonte = await t.call('POST', '/api/auth/login', {
-    body: { company: 'horizonte', email: 'admin@demo.local', password: SENHA },
+  const horizonte = await a.chamar('POST', '/api/entrar', {
+    corpo: { empresa: 'horizonte', email: 'admin@demo.local', senha: SENHA },
   });
-  const la = (await t.call('GET', '/api/roster', { session: horizonte.data.token })).data;
+  const la = (await a.chamar('GET', '/api/quadro', { sessao: horizonte.dados.token })).dados;
   // Camila só existe em Aurora; se ela aparecer no quadro de Horizonte, o duplo
   // está mentindo sobre o isolamento e testaria o produto contra uma fantasia.
-  assert.ok(!la.people.some((p: any) => p.id === aurora.data.principal.id));
-  assert.equal(la.sites.length, 1);
+  assert.ok(!la.pessoas.some((p: any) => p.id === aurora.dados.contexto.id));
+  assert.equal(la.unidades.length, 1);
 });

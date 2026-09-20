@@ -1,26 +1,26 @@
 import {
-  loginSchema,
-  membershipSchema,
-  passwordSchema,
-  siteSchema,
-  userSchema,
-  type Role,
+  esquemaLogin,
+  esquemaPessoa,
+  esquemaSenha,
+  esquemaUnidade,
+  esquemaVinculo,
+  type Papel,
 } from '../index.js';
-import { introspectionRequestSchema } from './index.js';
-import { mobileLoginSchema } from '../mobile.js';
+import { esquemaPedidoIntrospeccao } from './index.js';
+import { esquemaLoginAplicativo } from '../mobile.js';
 
 /**
  * Identidade de mentira, em memória, para a suíte de um produto.
  *
  * Ela é um `fetch`, não um cliente: quem estiver sendo testado usa o
- * `IdentityClient` de verdade, com o cache, o envio compartilhado e a falha
+ * `ClienteIdentidade` de verdade, com o cache, o envio compartilhado e a falha
  * fechada reais. Só o outro lado da rede é simulado.
  *
  * Existe porque a alternativa — cada produto subir o serviço de identidade na
  * própria suíte — obrigaria a depender do repositório dele, que é privado, e a
  * empilhar dependência git dentro de dependência git, o que o pnpm recusa.
  *
- * A fidelidade não é promessa: é verificada. A bateria `identityConformance`
+ * A fidelidade não é promessa: é verificada. A bateria `conformidadeIdentidade`
  * roda contra este duplo e contra o serviço de verdade, e uma divergência
  * derruba um dos dois.
  */
@@ -28,458 +28,474 @@ import { mobileLoginSchema } from '../mobile.js';
 export * from './conformance.js';
 
 const uuid = () => globalThis.crypto.randomUUID();
-const SESSION_MS = 8 * 3_600_000;
+const SESSAO_MS = 8 * 3_600_000;
 
-export type StubTenantSpec = {
-  slug: string;
-  name: string;
-  sites: { name: string; city?: string; timezone?: string }[];
+export type EmpresaDuplo = {
+  apelido: string;
+  nome: string;
+  unidades: { nome: string; cidade?: string; fuso?: string }[];
 };
-export type StubPersonSpec = {
+export type PessoaDuplo = {
   email: string;
-  name: string;
-  password: string;
-  active?: boolean;
-  must_change_password?: boolean;
-  memberships: { tenant: string; role: Role; sites?: string[]; active?: boolean }[];
+  nome: string;
+  senha: string;
+  ativo?: boolean;
+  trocar_senha?: boolean;
+  vinculos: { empresa: string; papel: Papel; unidades?: string[]; ativo?: boolean }[];
 };
-export type StubSpec = {
-  client?: { id: string; secret: string };
-  tenants: StubTenantSpec[];
-  people: StubPersonSpec[];
+export type EspecificacaoDuplo = {
+  cliente?: { id: string; segredo: string };
+  empresas: EmpresaDuplo[];
+  pessoas: PessoaDuplo[];
 };
 
-type Site = { id: string; name: string; city: string; timezone: string; tenant_id: string };
-type Tenant = { id: string; slug: string; name: string };
-type Membership = { role: Role; active: boolean; sites: Set<string> };
-type Person = {
+type Unidade = { id: string; nome: string; cidade: string; fuso: string; empresa_id: string };
+type Empresa = { id: string; apelido: string; nome: string };
+type Vinculo = { papel: Papel; ativo: boolean; unidades: Set<string> };
+type Pessoa = {
   id: string;
   email: string;
-  name: string;
-  password: string;
-  active: boolean;
-  must_change_password: boolean;
-  memberships: Map<string, Membership>;
+  nome: string;
+  senha: string;
+  ativo: boolean;
+  trocar_senha: boolean;
+  vinculos: Map<string, Vinculo>;
 };
-type Session = {
+type Sessao = {
   token: string;
-  user: string;
-  tenant: string;
-  site: string;
-  kind: 'web' | 'mobile';
-  expires: number;
+  pessoa: string;
+  empresa: string;
+  unidade: string;
+  tipo: 'painel' | 'aplicativo';
+  expira: number;
 };
 
-export type IdentityStub = {
-  /** Passe para `new IdentityClient({ fetch })`. */
+export type IdentidadeDuplo = {
+  /** Passe para `new ClienteIdentidade({ fetch })`. */
   fetch: typeof globalThis.fetch;
-  client: { id: string; secret: string };
-  tenantId(slug: string): string;
-  siteId(slug: string, site: string): string;
-  userId(email: string): string;
+  cliente: { id: string; segredo: string };
+  empresaId(apelido: string): string;
+  unidadeId(apelido: string, unidade: string): string;
+  pessoaId(email: string): string;
   /** Rotas pedidas, na ordem, para o teste conferir que o produto não fala demais. */
-  calls: { method: string; path: string }[];
+  chamadas: { metodo: string; caminho: string }[];
   /** Adianta o relógio das sessões, para exercitar expiração sem esperar. */
-  expireAll(): void;
+  expirarTudo(): void;
 };
 
-class HttpError extends Error {
+class ErroHttp extends Error {
   constructor(
     readonly status: number,
-    message: string,
+    mensagem: string,
     readonly extra: Record<string, unknown> = {},
   ) {
-    super(message);
+    super(mensagem);
   }
 }
 
-export function createIdentityStub(spec: StubSpec): IdentityStub {
-  const client = spec.client ?? { id: 'produto', secret: 'segredo-de-teste' };
-  const tenants = new Map<string, Tenant>();
-  const sites = new Map<string, Site>();
-  const people = new Map<string, Person>();
-  const sessions = new Map<string, Session>();
-  const calls: { method: string; path: string }[] = [];
+export function criarIdentidadeDuplo(spec: EspecificacaoDuplo): IdentidadeDuplo {
+  const cliente = spec.cliente ?? { id: 'produto', segredo: 'segredo-de-teste' };
+  const empresas = new Map<string, Empresa>();
+  const unidades = new Map<string, Unidade>();
+  const pessoas = new Map<string, Pessoa>();
+  const sessoes = new Map<string, Sessao>();
+  const chamadas: { metodo: string; caminho: string }[] = [];
   // Mesmo limite do serviço: sem ele, o duplo seria mais permissivo que a
   // produção e um teste de força bruta passaria aqui e falharia lá.
-  const attempts = new Map<string, number>();
+  const tentativas = new Map<string, number>();
 
-  for (const t of spec.tenants) {
-    const tenant: Tenant = { id: uuid(), slug: t.slug, name: t.name };
-    tenants.set(t.slug, tenant);
-    for (const s of t.sites)
-      sites.set(t.slug + '/' + s.name, {
+  for (const e of spec.empresas) {
+    const empresa: Empresa = { id: uuid(), apelido: e.apelido, nome: e.nome };
+    empresas.set(e.apelido, empresa);
+    for (const u of e.unidades)
+      unidades.set(e.apelido + '/' + u.nome, {
         id: uuid(),
-        name: s.name,
-        city: s.city ?? 'Cidade',
-        timezone: s.timezone ?? 'America/Sao_Paulo',
-        tenant_id: tenant.id,
+        nome: u.nome,
+        cidade: u.cidade ?? 'Cidade',
+        fuso: u.fuso ?? 'America/Sao_Paulo',
+        empresa_id: empresa.id,
       });
   }
-  for (const p of spec.people) {
-    const person: Person = {
+  for (const p of spec.pessoas) {
+    const pessoa: Pessoa = {
       id: uuid(),
       email: p.email.toLowerCase(),
-      name: p.name,
-      password: p.password,
-      active: p.active ?? true,
-      must_change_password: p.must_change_password ?? false,
-      memberships: new Map(),
+      nome: p.nome,
+      senha: p.senha,
+      ativo: p.ativo ?? true,
+      trocar_senha: p.trocar_senha ?? false,
+      vinculos: new Map(),
     };
-    for (const m of p.memberships) {
-      const tenant = tenants.get(m.tenant);
-      if (!tenant) throw new Error(`empresa desconhecida no duplo: ${m.tenant}`);
-      const nomes = m.sites ?? spec.tenants.find((t) => t.slug === m.tenant)!.sites.map((s) => s.name);
-      person.memberships.set(tenant.id, {
-        role: m.role,
-        active: m.active ?? true,
-        sites: new Set(nomes.map((n) => sites.get(m.tenant + '/' + n)!.id)),
+    for (const v of p.vinculos) {
+      const empresa = empresas.get(v.empresa);
+      if (!empresa) throw new Error(`empresa desconhecida no duplo: ${v.empresa}`);
+      const nomes =
+        v.unidades ?? spec.empresas.find((e) => e.apelido === v.empresa)!.unidades.map((u) => u.nome);
+      pessoa.vinculos.set(empresa.id, {
+        papel: v.papel,
+        ativo: v.ativo ?? true,
+        unidades: new Set(nomes.map((n) => unidades.get(v.empresa + '/' + n)!.id)),
       });
     }
-    people.set(person.email, person);
+    pessoas.set(pessoa.email, pessoa);
   }
 
-  const byId = (id: string) => [...people.values()].find((p) => p.id === id);
-  const siteById = (id: string) => [...sites.values()].find((s) => s.id === id);
-  const tenantById = (id: string) => [...tenants.values()].find((t) => t.id === id);
+  const porId = (id: string) => [...pessoas.values()].find((p) => p.id === id);
+  const unidadePorId = (id: string) => [...unidades.values()].find((u) => u.id === id);
+  const empresaPorId = (id: string) => [...empresas.values()].find((e) => e.id === id);
 
   /** Unidade de entrada: a primeira em ordem alfabética, nunca a de menor uuid. */
-  const landing = (membership: Membership) =>
-    [...membership.sites]
-      .map((id) => siteById(id)!)
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))[0];
+  const entrada = (vinculo: Vinculo) =>
+    [...vinculo.unidades]
+      .map((id) => unidadePorId(id)!)
+      .sort((a, b) => a.nome.localeCompare(b.nome) || a.id.localeCompare(b.id))[0];
 
-  const principalOf = (session: Session) => {
-    const person = byId(session.user)!;
-    const membership = person.memberships.get(session.tenant)!;
-    const site = siteById(session.site)!;
+  const contextoDe = (sessao: Sessao) => {
+    const pessoa = porId(sessao.pessoa)!;
+    const vinculo = pessoa.vinculos.get(sessao.empresa)!;
+    const unidade = unidadePorId(sessao.unidade)!;
     return {
-      id: person.id,
-      name: person.name,
-      email: person.email,
-      tenant_id: session.tenant,
-      tenant_name: tenantById(session.tenant)!.name,
-      site_id: site.id,
-      site_name: site.name,
-      timezone: site.timezone,
-      role: membership.role,
-      must_change_password: person.must_change_password,
+      id: pessoa.id,
+      nome: pessoa.nome,
+      email: pessoa.email,
+      empresa_id: sessao.empresa,
+      empresa_nome: empresaPorId(sessao.empresa)!.nome,
+      unidade_id: unidade.id,
+      unidade_nome: unidade.nome,
+      fuso: unidade.fuso,
+      papel: vinculo.papel,
+      trocar_senha: pessoa.trocar_senha,
     };
   };
 
   /** Mesma verificação que a resolução do serviço faz a cada pergunta. */
-  const alive = (session: Session | undefined, kind: 'web' | 'mobile') => {
-    if (!session || session.kind !== kind || session.expires <= Date.now()) return undefined;
-    const person = byId(session.user);
-    const membership = person?.memberships.get(session.tenant);
-    if (!person?.active || !membership?.active) return undefined;
-    if (!membership.sites.has(session.site)) return undefined;
-    return session;
+  const viva = (sessao: Sessao | undefined, tipo: 'painel' | 'aplicativo') => {
+    if (!sessao || sessao.tipo !== tipo || sessao.expira <= Date.now()) return undefined;
+    const pessoa = porId(sessao.pessoa);
+    const vinculo = pessoa?.vinculos.get(sessao.empresa);
+    if (!pessoa?.ativo || !vinculo?.ativo) return undefined;
+    if (!vinculo.unidades.has(sessao.unidade)) return undefined;
+    return sessao;
   };
 
-  const issue = (person: Person, tenant: string, site: string, kind: 'web' | 'mobile') => {
-    const session: Session = {
-      token: [...Array(8)].map(() => uuid().replace(/-/g, '')).join('').slice(0, 64),
-      user: person.id,
-      tenant,
-      site,
-      kind,
-      expires: Date.now() + SESSION_MS,
+  const emitir = (
+    pessoa: Pessoa,
+    empresa: string,
+    unidade: string,
+    tipo: 'painel' | 'aplicativo',
+  ) => {
+    const sessao: Sessao = {
+      token: [...Array(8)]
+        .map(() => uuid().replace(/-/g, ''))
+        .join('')
+        .slice(0, 64),
+      pessoa: pessoa.id,
+      empresa,
+      unidade,
+      tipo,
+      expira: Date.now() + SESSAO_MS,
     };
-    sessions.set(session.token, session);
+    sessoes.set(sessao.token, sessao);
     return {
-      token: session.token,
-      expires_at: new Date(session.expires).toISOString(),
-      principal: principalOf(session),
+      token: sessao.token,
+      expira_em: new Date(sessao.expira).toISOString(),
+      contexto: contextoDe(sessao),
     };
   };
 
-  function authenticate(body: unknown, mobile: boolean) {
-    const data = mobile ? mobileLoginSchema.parse(body) : loginSchema.parse(body);
-    const key = `${data.company}:${data.email.toLowerCase()}`;
-    const used = (attempts.get(key) ?? 0) + 1;
-    attempts.set(key, used);
-    if (used > 10) throw new HttpError(403, 'Muitas tentativas. Aguarde 15 minutos.');
-    const tenant = tenants.get(data.company);
-    const person = people.get(data.email.toLowerCase());
-    const membership = tenant && person?.memberships.get(tenant.id);
+  function autenticar(corpo: unknown, aplicativo: boolean) {
+    const dados = aplicativo ? esquemaLoginAplicativo.parse(corpo) : esquemaLogin.parse(corpo);
+    const chave = `${dados.empresa}:${dados.email.toLowerCase()}`;
+    const usadas = (tentativas.get(chave) ?? 0) + 1;
+    tentativas.set(chave, usadas);
+    if (usadas > 10) throw new ErroHttp(403, 'Muitas tentativas. Aguarde 15 minutos.');
+    const empresa = empresas.get(dados.empresa);
+    const pessoa = pessoas.get(dados.email.toLowerCase());
+    const vinculo = empresa && pessoa?.vinculos.get(empresa.id);
     // Empresa errada e senha errada dão a mesma resposta: distinguir vazaria a
     // existência da conta.
-    if (!tenant || !person || !membership || !person.active || !membership.active)
-      throw new HttpError(401, 'Empresa, e-mail ou senha inválidos.');
-    if (person.password !== data.password)
-      throw new HttpError(401, 'Empresa, e-mail ou senha inválidos.');
-    if (mobile && !['technician', 'operator'].includes(membership.role))
-      throw new HttpError(
+    if (!empresa || !pessoa || !vinculo || !pessoa.ativo || !vinculo.ativo)
+      throw new ErroHttp(401, 'Empresa, e-mail ou senha inválidos.');
+    if (pessoa.senha !== dados.senha)
+      throw new ErroHttp(401, 'Empresa, e-mail ou senha inválidos.');
+    if (aplicativo && !['tecnico', 'solicitante'].includes(vinculo.papel))
+      throw new ErroHttp(
         403,
         'Este aplicativo atende técnicos e solicitantes. Use o painel para os demais perfis.',
       );
-    attempts.delete(key);
-    return issue(person, tenant.id, landing(membership).id, mobile ? 'mobile' : 'web');
+    tentativas.delete(chave);
+    return emitir(pessoa, empresa.id, entrada(vinculo).id, aplicativo ? 'aplicativo' : 'painel');
   }
 
-  function sessionOf(headers: Headers) {
-    const token = headers.get('x-pulso-session') ?? '';
-    const kind = headers.get('x-pulso-session-kind') === 'mobile' ? 'mobile' : 'web';
-    const session = alive(sessions.get(token), kind);
-    if (!session) throw new HttpError(401, 'Sua sessão expirou. Entre novamente.');
-    return session;
+  function sessaoDe(cabecalhos: Headers) {
+    const token = cabecalhos.get('x-pulso-sessao') ?? '';
+    const tipo = cabecalhos.get('x-pulso-tipo-sessao') === 'aplicativo' ? 'aplicativo' : 'painel';
+    const sessao = viva(sessoes.get(token), tipo);
+    if (!sessao) throw new ErroHttp(401, 'Sua sessão expirou. Entre novamente.');
+    return sessao;
   }
 
-  function admin(session: Session) {
-    const principal = principalOf(session);
-    if (principal.must_change_password)
-      throw new HttpError(403, 'Defina uma nova senha antes de continuar.');
-    if (principal.role !== 'admin')
-      throw new HttpError(403, 'Esta ação exige um administrador da empresa.');
-    return principal;
+  function administrador(sessao: Sessao) {
+    const contexto = contextoDe(sessao);
+    if (contexto.trocar_senha)
+      throw new ErroHttp(403, 'Defina uma nova senha antes de continuar.');
+    if (contexto.papel !== 'administrador')
+      throw new ErroHttp(403, 'Esta ação exige um administrador da empresa.');
+    return contexto;
   }
 
   /** Um administrador só concede as unidades em que ele próprio atua. */
-  function authorizedSites(session: Session, ids: string[]) {
-    const minhas = byId(session.user)!.memberships.get(session.tenant)!.sites;
+  function unidadesPermitidas(sessao: Sessao, ids: string[]) {
+    const minhas = porId(sessao.pessoa)!.vinculos.get(sessao.empresa)!.unidades;
     if (!ids.every((id) => minhas.has(id)))
-      throw new HttpError(400, 'Só é possível conceder acesso às unidades em que você atua.');
+      throw new ErroHttp(400, 'Só é possível conceder acesso às unidades em que você atua.');
   }
 
-  const temporary = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const temporaria = () => {
+    const alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const bytes = [...Array(12)].map(() => Math.floor(Math.random() * 256));
     return (
-      bytes.slice(0, 10).map((b) => alphabet[b % alphabet.length]).join('') +
+      bytes
+        .slice(0, 10)
+        .map((b) => alfabeto[b % alfabeto.length])
+        .join('') +
       String(bytes[10] % 10) +
       String(bytes[11] % 10)
     );
   };
 
-  const killSessions = (userId: string, tenant?: string, keep?: string) => {
-    for (const [token, s] of sessions)
-      if (s.user === userId && (tenant === undefined || s.tenant === tenant) && token !== keep)
-        sessions.delete(token);
+  const derrubarSessoes = (pessoaId: string, empresa?: string, preservar?: string) => {
+    for (const [token, s] of sessoes)
+      if (s.pessoa === pessoaId && (empresa === undefined || s.empresa === empresa) && token !== preservar)
+        sessoes.delete(token);
   };
 
-  const membershipsOf = (tenantId: string) =>
-    [...people.values()]
-      .filter((p) => p.memberships.has(tenantId))
-      .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+  const pessoasDa = (empresaId: string) =>
+    [...pessoas.values()]
+      .filter((p) => p.vinculos.has(empresaId))
+      .sort((a, b) => a.nome.localeCompare(b.nome) || a.id.localeCompare(b.id));
 
-  function route(method: string, path: string, body: any, headers: Headers): unknown {
-    if (method === 'POST' && path === '/api/introspect') {
+  function rotear(metodo: string, caminho: string, corpo: any, cabecalhos: Headers): unknown {
+    if (metodo === 'POST' && caminho === '/api/introspeccao') {
       // Validar aqui não é zelo: token vazio é pedido malformado, não token
       // inválido, e o serviço devolve 400. Sem isto o duplo era mais tolerante
       // que a produção — foi o que a conformidade pegou na primeira execução.
-      const pedido = introspectionRequestSchema.parse(body);
-      const session = alive(sessions.get(pedido.token), pedido.kind);
-      // Sempre 200. Token inválido é `active:false`, nunca erro: distinguir por
+      const pedido = esquemaPedidoIntrospeccao.parse(corpo);
+      const sessao = viva(sessoes.get(pedido.token), pedido.tipo);
+      // Sempre 200. Token inválido é `ativa:false`, nunca erro: distinguir por
       // código transformaria a rota em oráculo para quem tivesse a credencial.
-      if (!session) return { active: false };
+      if (!sessao) return { ativa: false };
       return {
-        active: true,
-        principal: principalOf(session),
-        expires_at: new Date(session.expires).toISOString(),
+        ativa: true,
+        contexto: contextoDe(sessao),
+        expira_em: new Date(sessao.expira).toISOString(),
       };
     }
-    if (method === 'POST' && path === '/api/auth/login') return authenticate(body, false);
-    if (method === 'POST' && path === '/api/auth/mobile/login') return authenticate(body, true);
-    if (method === 'POST' && path === '/api/auth/logout') {
-      sessions.delete(headers.get('x-pulso-session') ?? '');
+    if (metodo === 'POST' && caminho === '/api/entrar') return autenticar(corpo, false);
+    if (metodo === 'POST' && caminho === '/api/entrar/aplicativo') return autenticar(corpo, true);
+    if (metodo === 'POST' && caminho === '/api/sair') {
+      sessoes.delete(cabecalhos.get('x-pulso-sessao') ?? '');
       return { ok: true };
     }
 
-    const session = sessionOf(headers);
+    const sessao = sessaoDe(cabecalhos);
 
-    if (method === 'GET' && path === '/api/sites') {
-      const membership = byId(session.user)!.memberships.get(session.tenant)!;
-      return [...membership.sites]
-        .map((id) => siteById(id)!)
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map((s) => ({ id: s.id, name: s.name, city: s.city }));
+    if (metodo === 'GET' && caminho === '/api/unidades') {
+      const vinculo = porId(sessao.pessoa)!.vinculos.get(sessao.empresa)!;
+      return [...vinculo.unidades]
+        .map((id) => unidadePorId(id)!)
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+        .map((u) => ({ id: u.id, nome: u.nome, cidade: u.cidade }));
     }
-    if (method === 'POST' && path === '/api/auth/site') {
-      const { site_id } = siteSchema.parse(body);
-      const person = byId(session.user)!;
-      if (!person.memberships.get(session.tenant)!.sites.has(site_id))
-        throw new HttpError(403, 'Você não tem acesso a esta unidade.');
-      const issued = issue(person, session.tenant, site_id, 'web');
+    if (metodo === 'POST' && caminho === '/api/unidade') {
+      const { unidade_id } = esquemaUnidade.parse(corpo);
+      const pessoa = porId(sessao.pessoa)!;
+      if (!pessoa.vinculos.get(sessao.empresa)!.unidades.has(unidade_id))
+        throw new ErroHttp(403, 'Você não tem acesso a esta unidade.');
+      const emitida = emitir(pessoa, sessao.empresa, unidade_id, 'painel');
       // A anterior é revogada: um token antigo que continuasse valendo carregaria
       // o escopo da unidade de antes.
-      sessions.delete(session.token);
-      return issued;
+      sessoes.delete(sessao.token);
+      return emitida;
     }
-    if (method === 'POST' && path === '/api/auth/password') {
-      const data = passwordSchema.parse(body);
-      const person = byId(session.user)!;
-      if (person.password !== data.current) throw new HttpError(401, 'Senha atual incorreta.');
-      person.password = data.next;
-      person.must_change_password = false;
-      killSessions(person.id, undefined, session.token);
+    if (metodo === 'POST' && caminho === '/api/senha') {
+      const dados = esquemaSenha.parse(corpo);
+      const pessoa = porId(sessao.pessoa)!;
+      if (pessoa.senha !== dados.atual) throw new ErroHttp(401, 'Senha atual incorreta.');
+      pessoa.senha = dados.nova;
+      pessoa.trocar_senha = false;
+      derrubarSessoes(pessoa.id, undefined, sessao.token);
       return { ok: true };
     }
-    if (method === 'GET' && path === '/api/roster') {
+    if (metodo === 'GET' && caminho === '/api/quadro') {
       return {
-        generated_at: new Date().toISOString(),
+        gerado_em: new Date().toISOString(),
         // Quem tem vínculo inativo continua vindo: sumir com a linha quebraria o
         // cruzamento de nome no histórico de quem já saiu.
-        people: membershipsOf(session.tenant).map((p) => {
-          const m = p.memberships.get(session.tenant)!;
+        pessoas: pessoasDa(sessao.empresa).map((p) => {
+          const v = p.vinculos.get(sessao.empresa)!;
           return {
             id: p.id,
-            name: p.name,
+            nome: p.nome,
             email: p.email,
-            active: p.active,
-            role: m.role,
-            membership_active: m.active,
-            site_ids: [...m.sites].sort(),
+            ativo: p.ativo,
+            papel: v.papel,
+            vinculo_ativo: v.ativo,
+            unidade_ids: [...v.unidades].sort(),
           };
         }),
-        sites: [...sites.values()]
-          .filter((s) => s.tenant_id === session.tenant)
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((s) => ({ id: s.id, name: s.name, city: s.city, timezone: s.timezone })),
+        unidades: [...unidades.values()]
+          .filter((u) => u.empresa_id === sessao.empresa)
+          .sort((a, b) => a.nome.localeCompare(b.nome))
+          .map((u) => ({ id: u.id, nome: u.nome, cidade: u.cidade, fuso: u.fuso })),
       };
     }
 
-    if (method === 'GET' && path === '/api/users') {
-      admin(session);
+    if (metodo === 'GET' && caminho === '/api/pessoas') {
+      administrador(sessao);
       return {
-        users: membershipsOf(session.tenant)
-          .filter((p) => p.active)
+        pessoas: pessoasDa(sessao.empresa)
+          .filter((p) => p.ativo)
           .map((p) => {
-            const m = p.memberships.get(session.tenant)!;
+            const v = p.vinculos.get(sessao.empresa)!;
             return {
               id: p.id,
-              name: p.name,
+              nome: p.nome,
               email: p.email,
-              must_change_password: p.must_change_password,
-              role: m.role,
-              active: m.active,
-              site_ids: [...m.sites].sort(),
+              trocar_senha: p.trocar_senha,
+              papel: v.papel,
+              ativo: v.ativo,
+              unidade_ids: [...v.unidades].sort(),
             };
           }),
-        sites: [...byId(session.user)!.memberships.get(session.tenant)!.sites]
-          .map((id) => siteById(id)!)
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((s) => ({ id: s.id, name: s.name, city: s.city })),
+        unidades: [...porId(sessao.pessoa)!.vinculos.get(sessao.empresa)!.unidades]
+          .map((id) => unidadePorId(id)!)
+          .sort((a, b) => a.nome.localeCompare(b.nome))
+          .map((u) => ({ id: u.id, nome: u.nome, cidade: u.cidade })),
       };
     }
-    if (method === 'POST' && path === '/api/users') {
-      admin(session);
-      const data = userSchema.parse(body);
-      authorizedSites(session, data.site_ids);
-      const email = data.email.toLowerCase();
-      const existing = people.get(email);
-      if (existing?.memberships.has(session.tenant))
-        throw new HttpError(409, 'Esta pessoa já tem acesso a esta empresa.');
-      const password = temporary();
+    if (metodo === 'POST' && caminho === '/api/pessoas') {
+      administrador(sessao);
+      const dados = esquemaPessoa.parse(corpo);
+      unidadesPermitidas(sessao, dados.unidade_ids);
+      const email = dados.email.toLowerCase();
+      const existente = pessoas.get(email);
+      if (existente?.vinculos.has(sessao.empresa))
+        throw new ErroHttp(409, 'Esta pessoa já tem acesso a esta empresa.');
+      const senha = temporaria();
       // Quem já usa o portfólio noutra empresa mantém a senha que tem; devolver
       // uma temporária aqui invalidaria o acesso que ela já usa.
-      const person: Person =
-        existing ??
-        {
-          id: uuid(),
-          email,
-          name: data.name,
-          password,
-          active: true,
-          must_change_password: true,
-          memberships: new Map(),
-        };
-      person.memberships.set(session.tenant, {
-        role: data.role,
-        active: true,
-        sites: new Set(data.site_ids),
-      });
-      people.set(email, person);
-      return {
-        id: person.id,
+      const pessoa: Pessoa = existente ?? {
+        id: uuid(),
         email,
-        name: person.name,
-        role: data.role,
-        temporary_password: existing ? null : password,
+        nome: dados.nome,
+        senha,
+        ativo: true,
+        trocar_senha: true,
+        vinculos: new Map(),
+      };
+      pessoa.vinculos.set(sessao.empresa, {
+        papel: dados.papel,
+        ativo: true,
+        unidades: new Set(dados.unidade_ids),
+      });
+      pessoas.set(email, pessoa);
+      return {
+        id: pessoa.id,
+        email,
+        nome: pessoa.nome,
+        papel: dados.papel,
+        senha_temporaria: existente ? null : senha,
       };
     }
-    const alvo = /^\/api\/users\/([^/]+)(\/password)?$/.exec(path);
-    if (method === 'POST' && alvo) {
-      admin(session);
+    const alvo = /^\/api\/pessoas\/([^/]+)(\/senha)?$/.exec(caminho);
+    if (metodo === 'POST' && alvo) {
+      administrador(sessao);
       const id = decodeURIComponent(alvo[1]);
-      const person = byId(id);
-      const membership = person?.memberships.get(session.tenant);
-      if (!person || !membership) throw new HttpError(404, 'Vínculo não encontrado nesta empresa.');
+      const pessoa = porId(id);
+      const vinculo = pessoa?.vinculos.get(sessao.empresa);
+      if (!pessoa || !vinculo) throw new ErroHttp(404, 'Vínculo não encontrado nesta empresa.');
       if (alvo[2]) {
-        const password = temporary();
-        person.password = password;
-        person.must_change_password = true;
-        killSessions(person.id);
-        return { id, temporary_password: password };
+        const senha = temporaria();
+        pessoa.senha = senha;
+        pessoa.trocar_senha = true;
+        derrubarSessoes(pessoa.id);
+        return { id, senha_temporaria: senha };
       }
-      const data = membershipSchema.parse(body);
-      if (!Object.keys(data).length) throw new HttpError(400, 'Informe o que deve mudar.');
-      if (id === session.user && (data.active === false || (data.role && data.role !== 'admin')))
-        throw new HttpError(400, 'Você não pode remover o próprio acesso de administrador.');
-      if (data.role !== undefined) membership.role = data.role;
-      if (data.active !== undefined) membership.active = data.active;
-      if (data.site_ids) {
-        authorizedSites(session, data.site_ids);
-        membership.sites = new Set(data.site_ids);
+      const dados = esquemaVinculo.parse(corpo);
+      if (!Object.keys(dados).length) throw new ErroHttp(400, 'Informe o que deve mudar.');
+      if (
+        id === sessao.pessoa &&
+        (dados.ativo === false || (dados.papel && dados.papel !== 'administrador'))
+      )
+        throw new ErroHttp(400, 'Você não pode remover o próprio acesso de administrador.');
+      if (dados.papel !== undefined) vinculo.papel = dados.papel;
+      if (dados.ativo !== undefined) vinculo.ativo = dados.ativo;
+      if (dados.unidade_ids) {
+        unidadesPermitidas(sessao, dados.unidade_ids);
+        vinculo.unidades = new Set(dados.unidade_ids);
       }
-      killSessions(person.id, session.tenant);
+      derrubarSessoes(pessoa.id, sessao.empresa);
       return { ok: true };
     }
-    throw new HttpError(404, 'Rota inexistente na identidade de teste: ' + method + ' ' + path);
+    throw new ErroHttp(404, 'Rota inexistente na identidade de teste: ' + metodo + ' ' + caminho);
   }
 
-  const fetchImpl = (async (input: any, init: any = {}) => {
-    const url = new URL(String(input));
-    const method = (init.method ?? 'GET').toUpperCase();
-    const headers = new Headers(init.headers ?? {});
-    calls.push({ method, path: url.pathname });
+  const fetchImpl = (async (entrada: any, init: any = {}) => {
+    const url = new URL(String(entrada));
+    const metodo = (init.method ?? 'GET').toUpperCase();
+    const cabecalhos = new Headers(init.headers ?? {});
+    chamadas.push({ metodo, caminho: url.pathname });
     // Nenhuma rota é anônima. Esta falha não é recusa do usuário: ninguém acerta a
     // senha se o produto não consegue nem perguntar, e por isso ela vem marcada.
     if (
-      headers.get('x-pulso-client') !== client.id ||
-      headers.get('authorization') !== 'Bearer ' + client.secret
+      cabecalhos.get('x-pulso-cliente') !== cliente.id ||
+      cabecalhos.get('authorization') !== 'Bearer ' + cliente.segredo
     )
-      return json(401, { message: 'Credencial de serviço inválida.', code: 'service_credential' });
-    let body: any;
+      return json(401, {
+        mensagem: 'Credencial de serviço inválida.',
+        codigo: 'credencial_servico',
+      });
+    let corpo: any;
     if (init.body !== undefined) {
       try {
-        body = JSON.parse(init.body);
+        corpo = JSON.parse(init.body);
       } catch {
-        return json(400, { message: 'Confira os campos informados.' });
+        return json(400, { mensagem: 'Confira os campos informados.' });
       }
     }
     try {
-      return json(method === 'POST' ? 201 : 200, route(method, url.pathname, body, headers));
-    } catch (error: any) {
-      if (error instanceof HttpError)
-        return json(error.status, { message: error.message, ...error.extra });
-      if (error?.issues)
+      return json(metodo === 'POST' ? 201 : 200, rotear(metodo, url.pathname, corpo, cabecalhos));
+    } catch (erro: any) {
+      if (erro instanceof ErroHttp)
+        return json(erro.status, { mensagem: erro.message, ...erro.extra });
+      if (erro?.issues)
         return json(400, {
-          message: 'Confira os campos informados.',
-          issues: error.issues.map((i: any) => ({
-            field: i.path.join('.'),
-            message: i.message,
+          mensagem: 'Confira os campos informados.',
+          campos: erro.issues.map((i: any) => ({
+            campo: i.path.join('.'),
+            mensagem: i.message,
           })),
         });
-      return json(500, { message: 'Falha na identidade de teste: ' + error?.message });
+      return json(500, { mensagem: 'Falha na identidade de teste: ' + erro?.message });
     }
   }) as unknown as typeof globalThis.fetch;
 
   return {
     fetch: fetchImpl,
-    client,
-    calls,
-    tenantId: (slug) => tenants.get(slug)!.id,
-    siteId: (slug, site) => sites.get(slug + '/' + site)!.id,
-    userId: (email) => people.get(email.toLowerCase())!.id,
-    expireAll: () => {
-      for (const s of sessions.values()) s.expires = Date.now() - 1;
+    cliente,
+    chamadas,
+    empresaId: (apelido) => empresas.get(apelido)!.id,
+    unidadeId: (apelido, unidade) => unidades.get(apelido + '/' + unidade)!.id,
+    pessoaId: (email) => pessoas.get(email.toLowerCase())!.id,
+    expirarTudo: () => {
+      for (const s of sessoes.values()) s.expira = Date.now() - 1;
     },
   };
 }
 
-const json = (status: number, body: unknown) =>
-  new Response(JSON.stringify(body ?? null), {
+const json = (status: number, corpo: unknown) =>
+  new Response(JSON.stringify(corpo ?? null), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });

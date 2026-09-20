@@ -1,66 +1,72 @@
 import { z } from 'zod';
-import { type Role } from '../index.js';
-export declare const introspectionRequestSchema: z.ZodObject<{
+import { type Papel } from '../index.js';
+/**
+ * Tipo da sessão. O serviço separa sessão de painel de sessão de aplicativo, e
+ * toda rota que recebe uma sessão precisa saber qual das duas está chegando:
+ * perguntar pelo tipo errado é o mesmo que perguntar por uma sessão inexistente.
+ */
+export type TipoSessao = 'painel' | 'aplicativo';
+export declare const esquemaPedidoIntrospeccao: z.ZodObject<{
     token: z.ZodString;
-    kind: z.ZodDefault<z.ZodEnum<{
-        web: "web";
-        mobile: "mobile";
+    tipo: z.ZodDefault<z.ZodEnum<{
+        painel: "painel";
+        aplicativo: "aplicativo";
     }>>;
 }, z.core.$strict>;
-export type IntrospectionRequest = z.infer<typeof introspectionRequestSchema>;
+export type PedidoIntrospeccao = z.infer<typeof esquemaPedidoIntrospeccao>;
 /** Contexto resolvido de quem está chamando: empresa, unidade e papel. */
-export type Principal = {
+export type Contexto = {
     id: string;
-    name: string;
+    nome: string;
     email: string;
-    tenant_id: string;
-    tenant_name: string;
-    site_id: string;
-    site_name: string;
-    timezone: string;
-    role: Role;
-    must_change_password: boolean;
+    empresa_id: string;
+    empresa_nome: string;
+    unidade_id: string;
+    unidade_nome: string;
+    fuso: string;
+    papel: Papel;
+    trocar_senha: boolean;
 };
 /**
  * Resposta sempre 200, mesmo para token inválido, no espírito da RFC 7662.
  * Distinguir "inválido" de "erro do serviço" por código HTTP transformaria a
  * rota em oráculo para quem tivesse a credencial de serviço.
  */
-export type Introspection = {
-    active: false;
+export type Introspeccao = {
+    ativa: false;
 } | {
-    active: true;
-    principal: Principal;
-    expires_at: string;
+    ativa: true;
+    contexto: Contexto;
+    expira_em: string;
 };
-export declare const introspectionSchema: z.ZodType<Introspection>;
+export declare const esquemaIntrospeccao: z.ZodType<Introspeccao>;
 /** Sessão emitida pela identidade. O produto guarda o token como preferir. */
-export type IssuedSession = {
+export type SessaoEmitida = {
     token: string;
-    expires_at: string;
-    principal: Principal;
+    expira_em: string;
+    contexto: Contexto;
 };
-export declare const issuedSessionSchema: z.ZodObject<{
+export declare const esquemaSessaoEmitida: z.ZodObject<{
     token: z.ZodString;
-    expires_at: z.ZodString;
-    principal: z.ZodObject<{
+    expira_em: z.ZodString;
+    contexto: z.ZodObject<{
         id: z.ZodString;
-        name: z.ZodString;
+        nome: z.ZodString;
         email: z.ZodString;
-        tenant_id: z.ZodString;
-        tenant_name: z.ZodString;
-        site_id: z.ZodString;
-        site_name: z.ZodString;
-        timezone: z.ZodString;
-        role: z.ZodEnum<{
-            admin: "admin";
-            manager: "manager";
-            technician: "technician";
-            operator: "operator";
-            storekeeper: "storekeeper";
-            viewer: "viewer";
+        empresa_id: z.ZodString;
+        empresa_nome: z.ZodString;
+        unidade_id: z.ZodString;
+        unidade_nome: z.ZodString;
+        fuso: z.ZodString;
+        papel: z.ZodEnum<{
+            administrador: "administrador";
+            gestor: "gestor";
+            tecnico: "tecnico";
+            solicitante: "solicitante";
+            almoxarife: "almoxarife";
+            consulta: "consulta";
         }>;
-        must_change_password: z.ZodBoolean;
+        trocar_senha: z.ZodBoolean;
     }, z.core.$strip>;
 }, z.core.$strip>;
 /**
@@ -69,123 +75,120 @@ export declare const issuedSessionSchema: z.ZodObject<{
  * A projeção existe para o produto cruzar nome de responsável e listar a equipe
  * sem um salto de rede por linha, e para as chaves estrangeiras de histórico
  * continuarem valendo. Ela **não é fonte de verdade de acesso**: quem decide se
- * alguém entra é a introspecção, que acontece a cada requisição. Projeção
- * atrasada não abre porta; ela apenas deixa de fechar uma que já está fechada.
+ * alguém entra é a introspecção, a cada requisição. Projeção atrasada não abre
+ * porta; ela apenas deixa de fechar uma que já está fechada.
  */
-export declare const rosterSchema: z.ZodObject<{
-    generated_at: z.ZodString;
-    people: z.ZodArray<z.ZodObject<{
+export declare const esquemaQuadro: z.ZodObject<{
+    gerado_em: z.ZodString;
+    pessoas: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
-        name: z.ZodString;
+        nome: z.ZodString;
         email: z.ZodString;
-        active: z.ZodBoolean;
-        role: z.ZodEnum<{
-            admin: "admin";
-            manager: "manager";
-            technician: "technician";
-            operator: "operator";
-            storekeeper: "storekeeper";
-            viewer: "viewer";
+        ativo: z.ZodBoolean;
+        papel: z.ZodEnum<{
+            administrador: "administrador";
+            gestor: "gestor";
+            tecnico: "tecnico";
+            solicitante: "solicitante";
+            almoxarife: "almoxarife";
+            consulta: "consulta";
         }>;
-        membership_active: z.ZodBoolean;
-        site_ids: z.ZodArray<z.ZodString>;
+        vinculo_ativo: z.ZodBoolean;
+        unidade_ids: z.ZodArray<z.ZodString>;
     }, z.core.$strip>>;
-    sites: z.ZodArray<z.ZodObject<{
+    unidades: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
-        name: z.ZodString;
-        city: z.ZodString;
-        timezone: z.ZodString;
+        nome: z.ZodString;
+        cidade: z.ZodString;
+        fuso: z.ZodString;
     }, z.core.$strip>>;
 }, z.core.$strip>;
-export type Roster = z.infer<typeof rosterSchema>;
+export type Quadro = z.infer<typeof esquemaQuadro>;
 /** Conta criada. A senha temporária vem uma única vez e não é recuperável. */
-export declare const accountCreatedSchema: z.ZodObject<{
+export declare const esquemaContaCriada: z.ZodObject<{
     id: z.ZodString;
     email: z.ZodString;
-    name: z.ZodString;
-    role: z.ZodEnum<{
-        admin: "admin";
-        manager: "manager";
-        technician: "technician";
-        operator: "operator";
-        storekeeper: "storekeeper";
-        viewer: "viewer";
+    nome: z.ZodString;
+    papel: z.ZodEnum<{
+        administrador: "administrador";
+        gestor: "gestor";
+        tecnico: "tecnico";
+        solicitante: "solicitante";
+        almoxarife: "almoxarife";
+        consulta: "consulta";
     }>;
-    temporary_password: z.ZodNullable<z.ZodString>;
+    senha_temporaria: z.ZodNullable<z.ZodString>;
 }, z.core.$strip>;
-export type AccountCreated = z.infer<typeof accountCreatedSchema>;
-export declare const accountListSchema: z.ZodObject<{
-    users: z.ZodArray<z.ZodObject<{
+export type ContaCriada = z.infer<typeof esquemaContaCriada>;
+export declare const esquemaListaContas: z.ZodObject<{
+    pessoas: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
-        name: z.ZodString;
+        nome: z.ZodString;
         email: z.ZodString;
-        must_change_password: z.ZodBoolean;
-        role: z.ZodEnum<{
-            admin: "admin";
-            manager: "manager";
-            technician: "technician";
-            operator: "operator";
-            storekeeper: "storekeeper";
-            viewer: "viewer";
+        trocar_senha: z.ZodBoolean;
+        papel: z.ZodEnum<{
+            administrador: "administrador";
+            gestor: "gestor";
+            tecnico: "tecnico";
+            solicitante: "solicitante";
+            almoxarife: "almoxarife";
+            consulta: "consulta";
         }>;
-        active: z.ZodBoolean;
-        site_ids: z.ZodArray<z.ZodString>;
+        ativo: z.ZodBoolean;
+        unidade_ids: z.ZodArray<z.ZodString>;
     }, z.core.$strip>>;
-    sites: z.ZodArray<z.ZodObject<{
+    unidades: z.ZodArray<z.ZodObject<{
         id: z.ZodString;
-        name: z.ZodString;
-        city: z.ZodString;
+        nome: z.ZodString;
+        cidade: z.ZodString;
     }, z.core.$strip>>;
 }, z.core.$strip>;
-export type AccountList = z.infer<typeof accountListSchema>;
-export declare const siteListSchema: z.ZodArray<z.ZodObject<{
+export type ListaContas = z.infer<typeof esquemaListaContas>;
+export declare const esquemaListaUnidades: z.ZodArray<z.ZodObject<{
     id: z.ZodString;
-    name: z.ZodString;
-    city: z.ZodString;
+    nome: z.ZodString;
+    cidade: z.ZodString;
 }, z.core.$strip>>;
-export type IdentityClientOptions = {
+export type OpcoesClienteIdentidade = {
     baseUrl: string;
-    clientId: string;
-    clientSecret: string;
+    clienteId: string;
+    clienteSegredo: string;
     /**
      * Janela em que uma introspecção positiva é reaproveitada. É o atraso máximo
-     * da revogação: encerrar uma sessão só surte efeito no produto depois disso.
-     * Zero desliga o cache e devolve revogação imediata ao custo de um salto de
-     * rede por requisição.
+     * da revogação por expiração: encerrar uma sessão só surte efeito no produto
+     * depois disso. Zero desliga o cache e devolve revogação imediata ao custo de
+     * um salto de rede por requisição.
+     *
+     * Revogação que alguém **pediu** não espera esta janela: as rotas que
+     * derrubam sessão do outro lado chamam `esquecerTudo`.
      */
     cacheMs?: number;
     timeoutMs?: number;
     fetch?: typeof globalThis.fetch;
 };
-/**
- * Tipo da sessão. O serviço separa sessão de painel de sessão de aplicativo, e
- * toda rota que recebe uma sessão precisa saber qual das duas está chegando:
- * perguntar pelo tipo errado é o mesmo que perguntar por uma sessão inexistente.
- */
-export type SessionKind = 'web' | 'mobile';
-export declare class IdentityUnavailableError extends Error {
-    constructor(cause: unknown);
+export declare class IdentidadeIndisponivel extends Error {
+    constructor(causa: unknown);
 }
 /**
  * Recusa da identidade: credencial inválida, senha errada, papel insuficiente.
  * Carrega o código e a mensagem originais para o produto repassá-los sem
  * reescrever regra que não é dele.
  */
-export declare class IdentityRejectedError extends Error {
+export declare class IdentidadeRecusou extends Error {
     readonly status: number;
-    readonly issues?: {
-        field: string;
-        message: string;
+    readonly campos?: {
+        campo: string;
+        mensagem: string;
     }[] | undefined;
-    constructor(status: number, message: string, issues?: {
-        field: string;
-        message: string;
+    constructor(status: number, mensagem: string, campos?: {
+        campo: string;
+        mensagem: string;
     }[] | undefined);
 }
 /**
  * Cliente de introspecção com cache curto.
  *
- * Falha fechado: se a identidade não responde, `introspect` lança em vez de
+ * Falha fechado: se a identidade não responde, `introspectar` lança em vez de
  * liberar o acesso. A consequência é que a identidade vira dependência dura de
  * disponibilidade de todo produto do portfólio — o preço de manter a revogação
  * síncrona em vez de usar token assinado.
@@ -193,17 +196,17 @@ export declare class IdentityRejectedError extends Error {
  * Só resposta positiva entra no cache. Negativa nunca: um token recém-emitido
  * que tenha sido perguntado cedo demais ficaria marcado como inválido.
  */
-export declare class IdentityClient {
-    private readonly options;
+export declare class ClienteIdentidade {
+    private readonly opcoes;
     private readonly cache;
-    private readonly pending;
+    private readonly emCurso;
     private readonly cacheMs;
     private readonly timeoutMs;
     private readonly fetch;
-    constructor(options: IdentityClientOptions);
-    introspect(token: string, kind?: 'web' | 'mobile'): Promise<Introspection>;
+    constructor(opcoes: OpcoesClienteIdentidade);
+    introspectar(token: string, tipo?: TipoSessao): Promise<Introspeccao>;
     /** Descarta a entrada em cache. O produto chama isto ao encerrar a sessão. */
-    forget(token: string): void;
+    esquecer(token: string): void;
     /**
      * Descarta o cache inteiro.
      *
@@ -216,135 +219,135 @@ export declare class IdentityClient {
      * mudança de acesso é rara. O contrário — deixar valer um acesso que alguém
      * mandou cortar — não é aceitável em nenhuma janela.
      */
-    forgetAll(): void;
+    esquecerTudo(): void;
     /**
      * Autentica e devolve a sessão. O produto guarda o token como preferir — o
      * painel em cookie próprio, o aplicativo em armazenamento seguro. A identidade
      * não emite cookie: cookie é preso a domínio, e produtos em hosts diferentes
      * não o compartilhariam.
      */
-    login(body: unknown): Promise<{
+    entrar(corpo: unknown): Promise<{
         token: string;
-        expires_at: string;
-        principal: {
+        expira_em: string;
+        contexto: {
             id: string;
-            name: string;
+            nome: string;
             email: string;
-            tenant_id: string;
-            tenant_name: string;
-            site_id: string;
-            site_name: string;
-            timezone: string;
-            role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-            must_change_password: boolean;
+            empresa_id: string;
+            empresa_nome: string;
+            unidade_id: string;
+            unidade_nome: string;
+            fuso: string;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            trocar_senha: boolean;
         };
     }>;
-    mobileLogin(body: unknown): Promise<{
+    entrarAplicativo(corpo: unknown): Promise<{
         token: string;
-        expires_at: string;
-        principal: {
+        expira_em: string;
+        contexto: {
             id: string;
-            name: string;
+            nome: string;
             email: string;
-            tenant_id: string;
-            tenant_name: string;
-            site_id: string;
-            site_name: string;
-            timezone: string;
-            role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-            must_change_password: boolean;
+            empresa_id: string;
+            empresa_nome: string;
+            unidade_id: string;
+            unidade_nome: string;
+            fuso: string;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            trocar_senha: boolean;
         };
     }>;
-    logout(token: string, kind?: SessionKind): Promise<void>;
-    sites(token: string, kind?: SessionKind): Promise<{
+    sair(token: string, tipo?: TipoSessao): Promise<void>;
+    unidades(token: string, tipo?: TipoSessao): Promise<{
         id: string;
-        name: string;
-        city: string;
+        nome: string;
+        cidade: string;
     }[]>;
-    switchSite(token: string, body: unknown): Promise<{
+    trocarUnidade(token: string, corpo: unknown): Promise<{
         token: string;
-        expires_at: string;
-        principal: {
+        expira_em: string;
+        contexto: {
             id: string;
-            name: string;
+            nome: string;
             email: string;
-            tenant_id: string;
-            tenant_name: string;
-            site_id: string;
-            site_name: string;
-            timezone: string;
-            role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-            must_change_password: boolean;
+            empresa_id: string;
+            empresa_nome: string;
+            unidade_id: string;
+            unidade_nome: string;
+            fuso: string;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            trocar_senha: boolean;
         };
     }>;
-    changePassword(token: string, body: unknown): Promise<{
+    trocarSenha(token: string, corpo: unknown): Promise<{
         ok: boolean;
     }>;
     /** Quadro de pessoas da empresa da sessão, para o produto projetar. */
-    roster(token: string, kind?: SessionKind): Promise<{
-        generated_at: string;
-        people: {
+    quadro(token: string, tipo?: TipoSessao): Promise<{
+        gerado_em: string;
+        pessoas: {
             id: string;
-            name: string;
+            nome: string;
             email: string;
-            active: boolean;
-            role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-            membership_active: boolean;
-            site_ids: string[];
+            ativo: boolean;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            vinculo_ativo: boolean;
+            unidade_ids: string[];
         }[];
-        sites: {
+        unidades: {
             id: string;
-            name: string;
-            city: string;
-            timezone: string;
+            nome: string;
+            cidade: string;
+            fuso: string;
         }[];
     }>;
-    accounts(token: string): Promise<{
-        users: {
+    contas(token: string): Promise<{
+        pessoas: {
             id: string;
-            name: string;
+            nome: string;
             email: string;
-            must_change_password: boolean;
-            role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-            active: boolean;
-            site_ids: string[];
+            trocar_senha: boolean;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            ativo: boolean;
+            unidade_ids: string[];
         }[];
-        sites: {
+        unidades: {
             id: string;
-            name: string;
-            city: string;
+            nome: string;
+            cidade: string;
         }[];
     }>;
-    createAccount(token: string, body: unknown): Promise<{
+    criarConta(token: string, corpo: unknown): Promise<{
         id: string;
         email: string;
-        name: string;
-        role: "admin" | "manager" | "technician" | "operator" | "storekeeper" | "viewer";
-        temporary_password: string | null;
+        nome: string;
+        papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+        senha_temporaria: string | null;
     }>;
-    updateAccount(token: string, id: string, body: unknown): Promise<{
+    alterarConta(token: string, id: string, corpo: unknown): Promise<{
         ok: boolean;
     }>;
-    resetAccountPassword(token: string, id: string): Promise<{
+    redefinirSenha(token: string, id: string): Promise<{
         id: string;
-        temporary_password: string;
+        senha_temporaria: string;
     }>;
     /**
-     * A introspecção nunca recusa um token com 4xx — token inválido é `active:false`
-     * em 200. Então qualquer 4xx aqui é problema do produto, tipicamente credencial
-     * de serviço errada, e precisa falhar fechado como indisponibilidade.
+     * A introspecção nunca recusa um token com 4xx — token inválido é
+     * `ativa:false` em 200. Então qualquer 4xx aqui é problema do produto,
+     * tipicamente credencial de serviço errada, e precisa falhar fechado.
      *
      * Deixar a recusa atravessar seria desastroso: o produto repassaria 401 ao
      * navegador e um erro de configuração no deploy deslogaria todo mundo de uma
      * vez, em vez de devolver indisponibilidade enquanto alguém conserta.
      */
-    private ask;
+    private perguntar;
     /**
      * Um único ponto de rede. A distinção que ele preserva é a que importa: 4xx é
      * recusa da identidade e atravessa com o código e a mensagem originais, que já
      * estão em português; qualquer outra coisa é indisponibilidade e falha fechado.
      * Tratar as duas igual deslogaria todo mundo durante uma queda do serviço.
      */
-    private call;
+    private chamar;
 }
 //# sourceMappingURL=index.d.ts.map

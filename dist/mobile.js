@@ -1,38 +1,46 @@
 import { z } from 'zod';
-import { checklistSchema, idSchema, loginSchema, requestSchema, } from './index.js';
-export const mobileLoginSchema = loginSchema.extend({ device_id: idSchema });
-export const manifestEntrySchema = z
+import { esquemaChecklist, esquemaId, esquemaLogin, esquemaSolicitacao, } from './index.js';
+export const esquemaLoginAplicativo = esquemaLogin.extend({ dispositivo_id: esquemaId });
+export const esquemaItemManifesto = z
     .object({
-    entity: z.enum(['asset', 'order']),
-    id: idSchema,
+    entidade: z.enum(['ativo', 'ordem']),
+    id: esquemaId,
     etag: z.string().regex(/^[a-f0-9]{64}$/),
 })
     .strict();
-export const pullSchema = z.object({ known: z.array(manifestEntrySchema).max(10_000) }).strict();
-export const mobileOperationSchema = z.discriminatedUnion('kind', [
-    z.object({ id: idSchema, kind: z.literal('request.create'), body: requestSchema }).strict(),
+export const esquemaDownload = z
+    .object({ conhecidos: z.array(esquemaItemManifesto).max(10_000) })
+    .strict();
+export const esquemaOperacaoAplicativo = z.discriminatedUnion('tipo', [
+    z
+        .object({ id: esquemaId, tipo: z.literal('solicitacao.criar'), corpo: esquemaSolicitacao })
+        .strict(),
     z
         .object({
-        id: idSchema,
-        kind: z.literal('order.checklist'),
-        order_id: idSchema,
-        body: checklistSchema,
+        id: esquemaId,
+        tipo: z.literal('ordem.checklist'),
+        ordem_id: esquemaId,
+        corpo: esquemaChecklist,
     })
         .strict(),
 ]);
-export const mobileScope = (user) => `${user.tenant_id}:${user.site_id}:${user.id}`;
-// Read QR identifiers only; never navigate to a URL obtained from a physical label.
-export function qrIdentifier(value) {
-    const direct = idSchema.safeParse(value.trim());
-    if (direct.success)
-        return direct.data;
+export const escopoAplicativo = (pessoa) => `${pessoa.empresa_id}:${pessoa.unidade_id}:${pessoa.id}`;
+/**
+ * Lê identificadores de QR e nada além disso. Uma etiqueta é um objeto físico
+ * que qualquer pessoa pode colar na máquina: navegar para uma URL vinda dali
+ * seria obedecer a quem imprimiu o adesivo.
+ */
+export function identificadorQr(valor) {
+    const direto = esquemaId.safeParse(valor.trim());
+    if (direto.success)
+        return direto.data;
     try {
-        const url = new URL(value.trim());
+        const url = new URL(valor.trim());
         if (!['https:', 'http:'].includes(url.protocol))
             return null;
-        const match = /^\/qr\/([a-f0-9-]+)\/?$/i.exec(url.pathname);
-        const parsed = idSchema.safeParse(match?.[1]);
-        return parsed.success ? parsed.data : null;
+        const achado = /^\/qr\/([a-f0-9-]+)\/?$/i.exec(url.pathname);
+        const lido = esquemaId.safeParse(achado?.[1]);
+        return lido.success ? lido.data : null;
     }
     catch {
         return null;

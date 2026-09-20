@@ -8,9 +8,9 @@ Este repositório existe porque os dois produtos passaram a viver separados. Ant
 
 | Subcaminho | Conteúdo | Quem consome |
 |---|---|---|
-| `@pulso/contracts` | Papéis, estados, transições permitidas, schemas zod das mutações, cálculo de ocorrência de plano e datas por fuso. | API, painel web, aplicativo |
+| `@pulso/contracts` | Papéis, estados, transições permitidas, esquemas zod das mutações, cálculo de ocorrência de plano e datas por fuso. | API, painel web, aplicativo |
 | `@pulso/contracts/mobile` | Protocolo 1: login mobile, manifesto, envelope de operações, tipos de `pull` e leitura de QR. | API, aplicativo |
-| `@pulso/contracts/identity` | Contrato do serviço de identidade e o `IdentityClient`: introspecção com cache curto, envio compartilhado e falha fechada, mais as rotas de sessão, contas e quadro de pessoas. | `pulso-identity` e todo produto do portfólio |
+| `@pulso/contracts/identity` | Contrato do serviço de identidade e o `ClienteIdentidade`: introspecção com cache curto, envio compartilhado e falha fechada, mais as rotas de sessão, contas e quadro de pessoas. | `pulso-identity` e todo produto do portfólio |
 | `@pulso/contracts/identity/testing` | Identidade de mentira em memória, na forma de um `fetch`, e a bateria de conformidade que a mantém fiel ao serviço de verdade. | suíte de todo produto que depende de identidade |
 | `@pulso/contracts/offline` | Cliente de referência: `OfflineStore` (cache + outbox) e `SyncEngine` (política de reenvio, conflito e bloqueio). | Aplicativo; API apenas em teste |
 | `@pulso/contracts/offline/testing` | Adaptador `node:sqlite` que implementa `SqlDatabase` para testes em Node. | Testes dos dois repositórios |
@@ -22,7 +22,7 @@ O cliente de sincronização mora aqui, e não no repositório do aplicativo, po
 O pacote é distribuído por tag git, sem registry:
 
 ```sh
-pnpm add github:Leo-501/pulso-contracts#v0.7.3
+pnpm add github:Leo-501/pulso-contracts#v1.0.0
 ```
 
 O `dist/` compilado é **versionado neste repositório**, e o pacote não tem script `prepare`. Os consumidores recebem JavaScript e `.d.ts` prontos — não o TypeScript cru. É por isso que o Metro do aplicativo não precisa do `resolveRequest` customizado que existia antes da divisão.
@@ -33,7 +33,7 @@ O risco da troca é o `dist` envelhecer sem ninguém notar, que é falha silenci
 
 ### `zod` é peer dependency, de propósito
 
-O filtro de exceções da API faz `error instanceof ZodError`. Se o pacote trouxesse a própria cópia de `zod`, um erro lançado por um schema daqui não seria reconhecido lá, e uma validação que deveria virar `400` viraria `500`. Manter `zod` como peer garante uma única instância no consumidor. **Não promova `zod` a dependency.**
+O filtro de exceções da API faz `error instanceof ZodError`. Se o pacote trouxesse a própria cópia de `zod`, um erro lançado por um esquema daqui não seria reconhecido lá, e uma validação que deveria virar `400` viraria `500`. Manter `zod` como peer garante uma única instância no consumidor. **Não promova `zod` a dependency.**
 
 ## Disciplina de versionamento
 
@@ -42,7 +42,7 @@ Toda mudança publica uma tag nova. Os consumidores apontam para tags, nunca par
 | Tipo de mudança | Efeito |
 |---|---|
 | Campo novo opcional, rótulo, regra que só restringe o cliente | patch |
-| Entidade nova no `pull`, operação nova no envelope, schema novo | minor |
+| Entidade nova no download, operação nova no envelope, esquema novo | minor |
 | Alteração de significado de campo existente, remoção, mudança em `protocol` | major, com plano de transição |
 
 Antes de publicar uma tag: `pnpm typecheck && pnpm test`. Depois de publicar, atualize a referência em todos os consumidores **na mesma leva** e rode os testes de lá — em especial `tests/mobile-api.test.ts` no `pulso-cmms`, que é o único teste que exercita servidor e cliente juntos.
@@ -66,3 +66,10 @@ pnpm --dir ../pulso-cmms link ../pulso-contracts
 ```
 
 Desfaça o link e volte para a tag antes de entregar.
+
+## Vocabulário
+
+Todo o pacote fala português: tabelas, colunas, campos de JSON, valores de enum e nomes de rota. O glossário está em [docs/VOCABULARIO.md](docs/VOCABULARIO.md), e a regra que ele protege é não haver tradução em camada nenhuma — o que se chama `ordens` no PostgreSQL chama-se `ordens` no JSON e `ordens` no React.
+
+Encontrar um nome em inglês aqui é defeito, não estilo antigo tolerado.
+

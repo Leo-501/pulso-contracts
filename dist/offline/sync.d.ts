@@ -1,19 +1,20 @@
-import type { ManifestEntry, MobileOperation, PullResponse } from '../mobile.js';
-import { OfflineStore } from './store.js';
-export declare class SyncError extends Error {
+import type { ItemManifesto, OperacaoAplicativo, RespostaDownload } from '../mobile.js';
+import { BaseLocal } from './store.js';
+export declare class ErroSincronizacao extends Error {
     status: number;
-    constructor(message: string, status: number);
+    constructor(mensagem: string, status: number);
 }
-export interface SyncTransport {
-    pull(known: ManifestEntry[]): Promise<PullResponse>;
-    send(operation: MobileOperation): Promise<unknown>;
+export interface TransporteSincronizacao {
+    baixar(conhecidos: ItemManifesto[]): Promise<RespostaDownload>;
+    enviar(operacao: OperacaoAplicativo): Promise<unknown>;
 }
-export declare class SyncEngine {
-    private store;
-    private transport;
-    private running?;
-    constructor(store: OfflineStore, transport: SyncTransport);
-    sync(): Promise<void>;
-    private run;
+export declare class MotorSincronizacao {
+    private base;
+    private transporte;
+    private emCurso?;
+    constructor(base: BaseLocal, transporte: TransporteSincronizacao);
+    /** Cliques simultâneos em sincronizar compartilham o mesmo envio. */
+    sincronizar(): Promise<void>;
+    private rodar;
 }
 //# sourceMappingURL=sync.d.ts.map

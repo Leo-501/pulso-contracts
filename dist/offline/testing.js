@@ -1,32 +1,33 @@
 import { DatabaseSync } from 'node:sqlite';
-export function sqliteDatabase(path = ':memory:') {
-    const raw = new DatabaseSync(path);
+/** Adaptador SQLite para a suíte. O aplicativo usa o dele, com SQLCipher. */
+export function bancoSqlite(caminho = ':memory:') {
+    const bruto = new DatabaseSync(caminho);
     const executor = {
-        async run(sql, params = []) {
-            raw.prepare(sql).run(...params);
+        async executar(sql, parametros = []) {
+            bruto.prepare(sql).run(...parametros);
         },
-        async all(sql, params = []) {
-            return raw.prepare(sql).all(...params);
+        async consultar(sql, parametros = []) {
+            return bruto.prepare(sql).all(...parametros);
         },
     };
-    const adapter = {
+    const adaptador = {
         ...executor,
-        async exec(sql) {
-            raw.exec(sql);
+        async script(sql) {
+            bruto.exec(sql);
         },
-        async transaction(fn) {
-            raw.exec('BEGIN');
+        async transacao(fn) {
+            bruto.exec('BEGIN');
             try {
-                const result = await fn(executor);
-                raw.exec('COMMIT');
-                return result;
+                const resultado = await fn(executor);
+                bruto.exec('COMMIT');
+                return resultado;
             }
             catch (e) {
-                raw.exec('ROLLBACK');
+                bruto.exec('ROLLBACK');
                 throw e;
             }
         },
     };
-    return { raw, adapter };
+    return { bruto, adaptador };
 }
 //# sourceMappingURL=testing.js.map

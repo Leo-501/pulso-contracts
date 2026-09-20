@@ -1,38 +1,43 @@
-import { type CachedRecord, type ManifestEntry, type MobileOperation, type PullResponse } from '../mobile.js';
-export type SqlValue = string | number | null;
-export interface SqlExecutor {
-    run(sql: string, params?: SqlValue[]): Promise<void>;
-    all<T>(sql: string, params?: SqlValue[]): Promise<T[]>;
+import { type ItemManifesto, type OperacaoAplicativo, type RegistroLocal, type RespostaDownload } from '../mobile.js';
+export type ValorSql = string | number | null;
+export interface ExecutorSql {
+    executar(sql: string, parametros?: ValorSql[]): Promise<void>;
+    consultar<T>(sql: string, parametros?: ValorSql[]): Promise<T[]>;
 }
-export interface SqlDatabase extends SqlExecutor {
-    exec(sql: string): Promise<void>;
-    transaction<T>(fn: (tx: SqlExecutor) => Promise<T>): Promise<T>;
+export interface BancoSql extends ExecutorSql {
+    script(sql: string): Promise<void>;
+    transacao<T>(fn: (tx: ExecutorSql) => Promise<T>): Promise<T>;
 }
-export type OutboxEntry = {
+export type ItemFila = {
     id: string;
-    kind: MobileOperation['kind'];
-    order_id: string | null;
-    payload: string;
-    state: 'pending' | 'confirmed' | 'conflict' | 'rejected' | 'superseded' | 'dismissed';
-    error: string | null;
-    receipt: string | null;
-    created_at: string;
+    tipo: OperacaoAplicativo['tipo'];
+    ordem_id: string | null;
+    corpo: string;
+    situacao: 'pendente' | 'confirmada' | 'conflito' | 'rejeitada' | 'substituida' | 'arquivada';
+    erro: string | null;
+    recibo: string | null;
+    criado_em: string;
 };
-export declare class OfflineStore {
-    db: SqlDatabase;
-    scope: string;
-    constructor(db: SqlDatabase, scope: string);
-    init(): Promise<this>;
-    manifest(): Promise<ManifestEntry[]>;
-    records(): Promise<CachedRecord[]>;
-    lastSync(): Promise<string>;
-    apply(response: PullResponse): Promise<void>;
-    enqueue(input: MobileOperation): Promise<void>;
-    private insert;
-    queue(): Promise<OutboxEntry[]>;
-    mark(id: string, state: 'confirmed' | 'conflict' | 'rejected', error: string | null, receipt?: unknown): Promise<void>;
-    lockCache(): Promise<void>;
-    dismiss(id: string): Promise<void>;
-    reapplyChecklist(id: string, newId: string): Promise<void>;
+export declare class BaseLocal {
+    db: BancoSql;
+    escopo: string;
+    constructor(db: BancoSql, escopo: string);
+    iniciar(): Promise<this>;
+    manifesto(): Promise<ItemManifesto[]>;
+    registros(): Promise<RegistroLocal[]>;
+    ultimaSincronizacao(): Promise<string>;
+    aplicar(resposta: RespostaDownload): Promise<void>;
+    enfileirar(entrada: OperacaoAplicativo): Promise<void>;
+    private inserir;
+    fila(): Promise<ItemFila[]>;
+    marcar(id: string, situacao: 'confirmada' | 'conflito' | 'rejeitada', erro: string | null, recibo?: unknown): Promise<void>;
+    /**
+     * Guarda a fila cifrada para nova autenticação do **mesmo** escopo, e para de
+     * expor o que foi baixado. Trabalho de campo ainda não enviado não pode sumir
+     * porque a sessão expirou.
+     */
+    bloquearCache(): Promise<void>;
+    arquivar(id: string): Promise<void>;
+    reaplicarChecklist(id: string, novoId: string): Promise<void>;
 }
 //# sourceMappingURL=store.d.ts.map

@@ -2,372 +2,380 @@
  * Bateria de conformidade da identidade.
  *
  * As mesmas verificações rodam contra o serviço de verdade (`pulso-identity`) e
- * contra o duplo em memória (`createIdentityStub`). Enquanto os dois passarem,
+ * contra o duplo em memória (`criarIdentidadeDuplo`). Enquanto os dois passarem,
  * um produto testado com o duplo está testado contra o comportamento real; se
  * divergirem, um dos dois cai — que é o único jeito honesto de um duplo existir.
  *
  * Deliberadamente não cobre o que é próprio de cada lado: o duplo não tem RLS,
- * papéis de banco nem auditoria, e o serviço não tem `expireAll`. O que está
+ * papéis de banco nem auditoria, e o serviço não tem `expirarTudo`. O que está
  * aqui é a fronteira que o produto enxerga.
  */
-function ok(condition, message) {
-    if (!condition)
-        throw new Error('conformidade: ' + message);
+function ok(condicao, mensagem) {
+    if (!condicao)
+        throw new Error('conformidade: ' + mensagem);
 }
-const eq = (actual, expected, what) => ok(actual === expected, `${what}: esperado ${JSON.stringify(expected)}, veio ${JSON.stringify(actual)}`);
+const igual = (obtido, esperado, oque) => ok(obtido === esperado, `${oque}: esperado ${JSON.stringify(esperado)}, veio ${JSON.stringify(obtido)}`);
 const novoEmail = () => `conformidade-${globalThis.crypto.randomUUID().slice(0, 8)}@demo.local`;
-async function entrar(t, email, password, company) {
-    return t.call('POST', '/api/auth/login', {
-        body: {
-            company: company ?? t.fixtures.company,
+async function entrar(a, email, senha, empresa) {
+    return a.chamar('POST', '/api/entrar', {
+        corpo: {
+            empresa: empresa ?? a.dados.empresa,
             email,
-            password: password ?? t.fixtures.password,
+            senha: senha ?? a.dados.senha,
         },
     });
 }
-const introspectar = (t, token, kind = 'web') => t.call('POST', '/api/introspect', { body: { token, kind } });
-/** Cria uma conta descartável e devolve a sessão dela já com senha definitiva. */
-async function contaNova(t, admin, over = {}) {
-    const sites = (await t.call('GET', '/api/users', { session: admin })).data.sites;
-    const criada = await t.call('POST', '/api/users', {
-        session: admin,
-        body: {
-            name: 'Pessoa de Conformidade',
+const introspectar = (a, token, tipo = 'painel') => a.chamar('POST', '/api/introspeccao', { corpo: { token, tipo } });
+/** Cria uma conta descartável e devolve o que for preciso para usá-la. */
+async function contaNova(a, administrador, extra = {}) {
+    const unidades = (await a.chamar('GET', '/api/pessoas', { sessao: administrador })).dados.unidades;
+    const criada = await a.chamar('POST', '/api/pessoas', {
+        sessao: administrador,
+        corpo: {
+            nome: 'Pessoa de Conformidade',
             email: novoEmail(),
-            role: 'technician',
-            site_ids: [sites[0].id],
-            ...over,
+            papel: 'tecnico',
+            unidade_ids: [unidades[0].id],
+            ...extra,
         },
     });
-    ok(criada.status < 300, 'criar conta descartável deveria funcionar: ' + JSON.stringify(criada.data));
-    return criada.data;
+    ok(criada.status < 300, 'criar conta descartável deveria funcionar: ' + JSON.stringify(criada.dados));
+    return criada.dados;
 }
-export const identityConformance = [
+export const conformidadeIdentidade = [
     {
-        name: 'nenhuma rota atende sem credencial de serviço, e a falha vem marcada',
-        async run(t) {
-            const sem = await t.callSemCredencial('/api/introspect', { token: 'qualquer' });
-            eq(sem.status, 401, 'status sem credencial');
+        nome: 'nenhuma rota atende sem credencial de serviço, e a falha vem marcada',
+        async rodar(a) {
+            const sem = await a.chamarSemCredencial('/api/introspeccao', { token: 'qualquer' });
+            igual(sem.status, 401, 'status sem credencial');
             // O marcador é o que impede o produto de repassar 401 ao navegador e
             // deslogar todo mundo por causa de um erro de configuração.
-            eq(sem.data?.code, 'service_credential', 'código da falha de credencial');
+            igual(sem.dados?.codigo, 'credencial_servico', 'código da falha de credencial');
         },
     },
     {
-        name: 'login devolve token e contexto resolvido',
-        async run(t) {
-            const sessao = await entrar(t, t.fixtures.admin);
-            ok(sessao.status < 300, 'login do administrador deveria funcionar');
-            ok(typeof sessao.data.token === 'string' && sessao.data.token.length >= 32, 'token opaco');
-            eq(sessao.data.principal.email, t.fixtures.admin, 'e-mail no principal');
-            eq(sessao.data.principal.role, 'admin', 'papel no principal');
-            ok(sessao.data.principal.site_name, 'unidade resolvida');
-            ok(Date.parse(sessao.data.expires_at) > Date.now(), 'validade no futuro');
+        nome: 'entrar devolve token e contexto resolvido',
+        async rodar(a) {
+            const sessao = await entrar(a, a.dados.administrador);
+            ok(sessao.status < 300, 'entrada do administrador deveria funcionar');
+            ok(typeof sessao.dados.token === 'string' && sessao.dados.token.length >= 32, 'token opaco');
+            igual(sessao.dados.contexto.email, a.dados.administrador, 'e-mail no contexto');
+            igual(sessao.dados.contexto.papel, 'administrador', 'papel no contexto');
+            ok(sessao.dados.contexto.unidade_nome, 'unidade resolvida');
+            ok(Date.parse(sessao.dados.expira_em) > Date.now(), 'validade no futuro');
         },
     },
     {
-        name: 'senha errada e empresa errada dão a mesma recusa',
-        async run(t) {
-            const senha = await entrar(t, t.fixtures.admin, 'senha-errada-de-proposito');
-            eq(senha.status, 401, 'status da senha errada');
-            const empresa = await entrar(t, t.fixtures.admin, undefined, 'empresa-que-nao-existe');
-            eq(empresa.status, 401, 'status da empresa errada');
-            eq(empresa.data.message, senha.data.message, 'as duas mensagens precisam ser iguais');
+        nome: 'senha errada e empresa errada dão a mesma recusa',
+        async rodar(a) {
+            const senha = await entrar(a, a.dados.administrador, 'senha-errada-de-proposito');
+            igual(senha.status, 401, 'status da senha errada');
+            const empresa = await entrar(a, a.dados.administrador, undefined, 'empresa-que-nao-existe');
+            igual(empresa.status, 401, 'status da empresa errada');
+            igual(empresa.dados.mensagem, senha.dados.mensagem, 'as duas mensagens precisam ser iguais');
         },
     },
     {
-        name: 'a unidade de entrada é a mesma em toda entrada',
-        async run(t) {
+        nome: 'a unidade de entrada é a mesma em toda entrada',
+        async rodar(a) {
             // Ordenar por uuid sorteava a unidade de quem tem mais de uma. O defeito só
             // aparece em repetição, então a verificação repete.
             const vistas = new Set();
             for (let i = 0; i < 3; i++) {
-                const sessao = await entrar(t, t.fixtures.duasUnidades);
-                ok(sessao.status < 300, 'login de quem tem duas unidades');
-                vistas.add(sessao.data.principal.site_id);
+                const sessao = await entrar(a, a.dados.duasUnidades);
+                ok(sessao.status < 300, 'entrada de quem tem duas unidades');
+                vistas.add(sessao.dados.contexto.unidade_id);
             }
-            eq(vistas.size, 1, 'unidades de entrada distintas em três logins');
+            igual(vistas.size, 1, 'unidades de entrada distintas em três entradas');
         },
     },
     {
-        name: 'introspecção devolve o contexto e nunca o token',
-        async run(t) {
-            const sessao = await entrar(t, t.fixtures.admin);
-            const resposta = await introspectar(t, sessao.data.token);
-            eq(resposta.status < 300, true, 'introspecção responde sucesso');
-            eq(resposta.data.active, true, 'sessão viva');
-            eq(resposta.data.principal.id, sessao.data.principal.id, 'mesma pessoa');
-            ok(!JSON.stringify(resposta.data).includes(sessao.data.token), 'o token não pode voltar');
+        nome: 'introspecção devolve o contexto e nunca o token',
+        async rodar(a) {
+            const sessao = await entrar(a, a.dados.administrador);
+            const resposta = await introspectar(a, sessao.dados.token);
+            ok(resposta.status < 300, 'introspecção responde sucesso');
+            igual(resposta.dados.ativa, true, 'sessão viva');
+            igual(resposta.dados.contexto.id, sessao.dados.contexto.id, 'mesma pessoa');
+            ok(!JSON.stringify(resposta.dados).includes(sessao.dados.token), 'o token não pode voltar');
         },
     },
     {
-        name: 'token inválido é active:false, não erro',
-        async run(t) {
+        nome: 'token inválido é ativa:false, não erro',
+        async rodar(a) {
             for (const token of ['nao-e-um-token', 'a'.repeat(64), 'f'.repeat(64)]) {
-                const resposta = await introspectar(t, token);
+                const resposta = await introspectar(a, token);
                 ok(resposta.status < 400, `token ${JSON.stringify(token)} não pode virar erro`);
-                eq(resposta.data.active, false, 'token inválido');
-                eq(resposta.data.principal, undefined, 'nada acompanha uma negativa');
+                igual(resposta.dados.ativa, false, 'token inválido');
+                igual(resposta.dados.contexto, undefined, 'nada acompanha uma negativa');
             }
             // Token vazio é outra coisa: é corpo malformado, e o contrato exige min(1).
             // Tratá-lo como token inválido esconderia um produto que perdeu o token.
-            eq((await introspectar(t, '')).status, 400, 'token vazio');
+            igual((await introspectar(a, '')).status, 400, 'token vazio');
         },
     },
     {
-        name: 'sessão web não vale como mobile e vice-versa',
-        async run(t) {
-            const web = await entrar(t, t.fixtures.technician);
-            eq((await introspectar(t, web.data.token, 'mobile')).data.active, false, 'web como mobile');
-            const mobile = await t.call('POST', '/api/auth/mobile/login', {
-                body: {
-                    company: t.fixtures.company,
-                    email: t.fixtures.technician,
-                    password: t.fixtures.password,
-                    device_id: globalThis.crypto.randomUUID(),
+        nome: 'sessão de painel não vale como aplicativo e vice-versa',
+        async rodar(a) {
+            const painel = await entrar(a, a.dados.tecnico);
+            igual((await introspectar(a, painel.dados.token, 'aplicativo')).dados.ativa, false, 'painel como aplicativo');
+            const aplicativo = await a.chamar('POST', '/api/entrar/aplicativo', {
+                corpo: {
+                    empresa: a.dados.empresa,
+                    email: a.dados.tecnico,
+                    senha: a.dados.senha,
+                    dispositivo_id: globalThis.crypto.randomUUID(),
                 },
             });
-            ok(mobile.status < 300, 'login mobile do técnico');
-            eq((await introspectar(t, mobile.data.token, 'web')).data.active, false, 'mobile como web');
-            eq((await introspectar(t, mobile.data.token, 'mobile')).data.active, true, 'mobile como mobile');
+            ok(aplicativo.status < 300, 'entrada do técnico pelo aplicativo');
+            igual((await introspectar(a, aplicativo.dados.token, 'painel')).dados.ativa, false, 'aplicativo como painel');
+            igual((await introspectar(a, aplicativo.dados.token, 'aplicativo')).dados.ativa, true, 'aplicativo como aplicativo');
         },
     },
     {
-        name: 'o aplicativo recusa perfis administrativos',
-        async run(t) {
-            const recusa = await t.call('POST', '/api/auth/mobile/login', {
-                body: {
-                    company: t.fixtures.company,
-                    email: t.fixtures.admin,
-                    password: t.fixtures.password,
-                    device_id: globalThis.crypto.randomUUID(),
+        nome: 'o aplicativo recusa perfis administrativos',
+        async rodar(a) {
+            const recusa = await a.chamar('POST', '/api/entrar/aplicativo', {
+                corpo: {
+                    empresa: a.dados.empresa,
+                    email: a.dados.administrador,
+                    senha: a.dados.senha,
+                    dispositivo_id: globalThis.crypto.randomUUID(),
                 },
             });
-            eq(recusa.status, 403, 'administrador no aplicativo');
+            igual(recusa.status, 403, 'administrador no aplicativo');
         },
     },
     {
-        name: 'encerrar a sessão a revoga na hora',
-        async run(t) {
-            const sessao = await entrar(t, t.fixtures.admin);
-            eq((await introspectar(t, sessao.data.token)).data.active, true, 'antes do logout');
-            await t.call('POST', '/api/auth/logout', { session: sessao.data.token, body: {} });
-            eq((await introspectar(t, sessao.data.token)).data.active, false, 'depois do logout');
+        nome: 'sair revoga a sessão na hora',
+        async rodar(a) {
+            const sessao = await entrar(a, a.dados.administrador);
+            igual((await introspectar(a, sessao.dados.token)).dados.ativa, true, 'antes de sair');
+            await a.chamar('POST', '/api/sair', { sessao: sessao.dados.token, corpo: {} });
+            igual((await introspectar(a, sessao.dados.token)).dados.ativa, false, 'depois de sair');
         },
     },
     {
-        name: 'a lista de unidades respeita o vínculo, não a empresa',
-        async run(t) {
-            const duas = await entrar(t, t.fixtures.duasUnidades);
-            const tecnico = await entrar(t, t.fixtures.technician);
-            const delas = (await t.call('GET', '/api/sites', { session: duas.data.token })).data;
-            const dele = (await t.call('GET', '/api/sites', { session: tecnico.data.token })).data;
+        nome: 'a lista de unidades respeita o vínculo, não a empresa',
+        async rodar(a) {
+            const duas = await entrar(a, a.dados.duasUnidades);
+            const tecnico = await entrar(a, a.dados.tecnico);
+            const delas = (await a.chamar('GET', '/api/unidades', { sessao: duas.dados.token })).dados;
+            const dele = (await a.chamar('GET', '/api/unidades', { sessao: tecnico.dados.token })).dados;
             ok(delas.length >= 2, 'quem tem duas unidades precisa ver duas');
             ok(dele.length < delas.length, 'quem tem uma não pode ver as da empresa inteira');
         },
     },
     {
-        name: 'trocar de unidade emite sessão nova e revoga a anterior',
-        async run(t) {
-            const sessao = await entrar(t, t.fixtures.duasUnidades);
-            const unidades = (await t.call('GET', '/api/sites', { session: sessao.data.token })).data;
-            const outra = unidades.find((s) => s.id !== sessao.data.principal.site_id);
+        nome: 'trocar de unidade emite sessão nova e revoga a anterior',
+        async rodar(a) {
+            const sessao = await entrar(a, a.dados.duasUnidades);
+            const unidades = (await a.chamar('GET', '/api/unidades', { sessao: sessao.dados.token }))
+                .dados;
+            const outra = unidades.find((u) => u.id !== sessao.dados.contexto.unidade_id);
             ok(outra, 'precisa haver outra unidade');
-            const nova = await t.call('POST', '/api/auth/site', {
-                session: sessao.data.token,
-                body: { site_id: outra.id },
+            const nova = await a.chamar('POST', '/api/unidade', {
+                sessao: sessao.dados.token,
+                corpo: { unidade_id: outra.id },
             });
             ok(nova.status < 300, 'troca de unidade');
-            eq(nova.data.principal.site_id, outra.id, 'a unidade nova');
-            ok(nova.data.token !== sessao.data.token, 'o token precisa ser outro');
-            eq((await introspectar(t, sessao.data.token)).data.active, false, 'a anterior fica revogada');
+            igual(nova.dados.contexto.unidade_id, outra.id, 'a unidade nova');
+            ok(nova.dados.token !== sessao.dados.token, 'o token precisa ser outro');
+            igual((await introspectar(a, sessao.dados.token)).dados.ativa, false, 'a anterior fica revogada');
         },
     },
     {
-        name: 'unidade sem vínculo é recusada',
-        async run(t) {
-            const tecnico = await entrar(t, t.fixtures.technician);
-            const duas = await entrar(t, t.fixtures.duasUnidades);
-            const dele = (await t.call('GET', '/api/sites', { session: tecnico.data.token })).data;
-            const delas = (await t.call('GET', '/api/sites', { session: duas.data.token })).data;
-            const semVinculo = delas.find((s) => !dele.some((d) => d.id === s.id));
+        nome: 'unidade sem vínculo é recusada',
+        async rodar(a) {
+            const tecnico = await entrar(a, a.dados.tecnico);
+            const duas = await entrar(a, a.dados.duasUnidades);
+            const dele = (await a.chamar('GET', '/api/unidades', { sessao: tecnico.dados.token })).dados;
+            const delas = (await a.chamar('GET', '/api/unidades', { sessao: duas.dados.token })).dados;
+            const semVinculo = delas.find((u) => !dele.some((d) => d.id === u.id));
             ok(semVinculo, 'precisa haver unidade fora do vínculo do técnico');
-            const recusa = await t.call('POST', '/api/auth/site', {
-                session: tecnico.data.token,
-                body: { site_id: semVinculo.id },
+            const recusa = await a.chamar('POST', '/api/unidade', {
+                sessao: tecnico.dados.token,
+                corpo: { unidade_id: semVinculo.id },
             });
-            eq(recusa.status, 403, 'unidade fora do vínculo');
+            igual(recusa.status, 403, 'unidade fora do vínculo');
         },
     },
     {
-        name: 'trocar a senha encerra as outras sessões e preserva a atual',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const conta = await contaNova(t, admin);
-            const primeira = (await entrar(t, conta.email, conta.temporary_password)).data.token;
-            const segunda = (await entrar(t, conta.email, conta.temporary_password)).data.token;
+        nome: 'trocar a senha encerra as outras sessões e preserva a atual',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const conta = await contaNova(a, administrador);
+            const primeira = (await entrar(a, conta.email, conta.senha_temporaria)).dados.token;
+            const segunda = (await entrar(a, conta.email, conta.senha_temporaria)).dados.token;
             const nova = 'Conformidade@2026!';
-            const troca = await t.call('POST', '/api/auth/password', {
-                session: segunda,
-                body: { current: conta.temporary_password, next: nova },
+            const troca = await a.chamar('POST', '/api/senha', {
+                sessao: segunda,
+                corpo: { atual: conta.senha_temporaria, nova },
             });
-            ok(troca.status < 300, 'troca de senha: ' + JSON.stringify(troca.data));
-            eq((await introspectar(t, primeira)).data.active, false, 'a outra sessão cai');
-            eq((await introspectar(t, segunda)).data.active, true, 'a atual permanece');
-            eq((await introspectar(t, segunda)).data.principal.must_change_password, false, 'a exigência de troca some');
-            ok((await entrar(t, conta.email, nova)).status < 300, 'a senha nova entra');
-            eq((await entrar(t, conta.email, conta.temporary_password)).status, 401, 'a antiga não');
+            ok(troca.status < 300, 'troca de senha: ' + JSON.stringify(troca.dados));
+            igual((await introspectar(a, primeira)).dados.ativa, false, 'a outra sessão cai');
+            igual((await introspectar(a, segunda)).dados.ativa, true, 'a atual permanece');
+            igual((await introspectar(a, segunda)).dados.contexto.trocar_senha, false, 'a exigência de troca some');
+            ok((await entrar(a, conta.email, nova)).status < 300, 'a senha nova entra');
+            igual((await entrar(a, conta.email, conta.senha_temporaria)).status, 401, 'a antiga não');
         },
     },
     {
-        name: 'o quadro traz as pessoas e as unidades da empresa',
-        async run(t) {
-            const sessao = (await entrar(t, t.fixtures.admin)).data.token;
-            const quadro = await t.call('GET', '/api/roster', { session: sessao });
+        nome: 'o quadro traz as pessoas e as unidades da empresa',
+        async rodar(a) {
+            const sessao = (await entrar(a, a.dados.administrador)).dados.token;
+            const quadro = await a.chamar('GET', '/api/quadro', { sessao });
             ok(quadro.status < 300, 'quadro de pessoas');
-            ok(Date.parse(quadro.data.generated_at) > 0, 'data de geração');
-            ok(quadro.data.sites.length >= 2, 'as unidades da empresa, não as do vínculo');
-            ok(quadro.data.sites.every((s) => s.timezone), 'cada unidade precisa do fuso, que o produto projeta');
-            const eu = quadro.data.people.find((p) => p.email === t.fixtures.admin);
+            ok(Date.parse(quadro.dados.gerado_em) > 0, 'data de geração');
+            ok(quadro.dados.unidades.length >= 2, 'as unidades da empresa, não as do vínculo');
+            ok(quadro.dados.unidades.every((u) => u.fuso), 'cada unidade precisa do fuso, que o produto projeta');
+            const eu = quadro.dados.pessoas.find((p) => p.email === a.dados.administrador);
             ok(eu, 'o administrador precisa aparecer no quadro');
-            eq(eu.membership_active, true, 'vínculo ativo');
-            ok(eu.site_ids.length >= 1, 'unidades do vínculo');
+            igual(eu.vinculo_ativo, true, 'vínculo ativo');
+            ok(eu.unidade_ids.length >= 1, 'unidades do vínculo');
         },
     },
     {
-        name: 'o quadro conserva quem teve o vínculo desativado',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const conta = await contaNova(t, admin);
-            await t.call('POST', `/api/users/${conta.id}`, { session: admin, body: { active: false } });
-            const quadro = await t.call('GET', '/api/roster', { session: admin });
-            const pessoa = quadro.data.people.find((p) => p.id === conta.id);
+        nome: 'o quadro conserva quem teve o vínculo desativado',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const conta = await contaNova(a, administrador);
+            await a.chamar('POST', `/api/pessoas/${conta.id}`, {
+                sessao: administrador,
+                corpo: { ativo: false },
+            });
+            const quadro = await a.chamar('GET', '/api/quadro', { sessao: administrador });
+            const pessoa = quadro.dados.pessoas.find((p) => p.id === conta.id);
             // Sumir com a linha quebraria o cruzamento de nome no histórico de quem saiu.
             ok(pessoa, 'quem saiu precisa continuar no quadro');
-            eq(pessoa.membership_active, false, 'marcado como inativo');
+            igual(pessoa.vinculo_ativo, false, 'marcado como inativo');
         },
     },
     {
-        name: 'contas são do administrador',
-        async run(t) {
-            const tecnico = (await entrar(t, t.fixtures.technician)).data.token;
-            eq((await t.call('GET', '/api/users', { session: tecnico })).status, 403, 'técnico listando');
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            ok((await t.call('GET', '/api/users', { session: admin })).status < 300, 'admin listando');
+        nome: 'contas são do administrador',
+        async rodar(a) {
+            const tecnico = (await entrar(a, a.dados.tecnico)).dados.token;
+            igual((await a.chamar('GET', '/api/pessoas', { sessao: tecnico })).status, 403, 'técnico listando');
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            ok((await a.chamar('GET', '/api/pessoas', { sessao: administrador })).status < 300, 'administrador listando');
         },
     },
     {
-        name: 'a senha temporária vem uma vez e repetir o vínculo dá 409',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const sites = (await t.call('GET', '/api/users', { session: admin })).data.sites;
+        nome: 'a senha temporária vem uma vez e repetir o vínculo dá 409',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const unidades = (await a.chamar('GET', '/api/pessoas', { sessao: administrador })).dados
+                .unidades;
             const corpo = {
-                name: 'Pessoa de Conformidade',
+                nome: 'Pessoa de Conformidade',
                 email: novoEmail(),
-                role: 'technician',
-                site_ids: [sites[0].id],
+                papel: 'tecnico',
+                unidade_ids: [unidades[0].id],
             };
-            const criada = await t.call('POST', '/api/users', { session: admin, body: corpo });
+            const criada = await a.chamar('POST', '/api/pessoas', { sessao: administrador, corpo });
             ok(criada.status < 300, 'criação');
-            ok(/^[A-HJ-NP-Z2-9]{10}\d{2}$/.test(criada.data.temporary_password), 'formato da senha temporária: ' + criada.data.temporary_password);
-            eq((await t.call('POST', '/api/users', { session: admin, body: corpo })).status, 409, 'vínculo repetido');
-            ok((await entrar(t, corpo.email, criada.data.temporary_password)).status < 300, 'ela entra');
+            ok(/^[A-HJ-NP-Z2-9]{10}\d{2}$/.test(criada.dados.senha_temporaria), 'formato da senha temporária: ' + criada.dados.senha_temporaria);
+            igual((await a.chamar('POST', '/api/pessoas', { sessao: administrador, corpo })).status, 409, 'vínculo repetido');
+            ok((await entrar(a, corpo.email, criada.dados.senha_temporaria)).status < 300, 'ela entra');
         },
     },
     {
-        name: 'senha temporária autentica mas não administra ninguém',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const conta = await contaNova(t, admin, { role: 'admin' });
-            const sessao = await entrar(t, conta.email, conta.temporary_password);
-            eq(sessao.data.principal.must_change_password, true, 'exigência de troca');
-            eq((await t.call('GET', '/api/users', { session: sessao.data.token })).status, 403, 'administrar com senha temporária');
+        nome: 'senha temporária autentica mas não administra ninguém',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const conta = await contaNova(a, administrador, { papel: 'administrador' });
+            const sessao = await entrar(a, conta.email, conta.senha_temporaria);
+            igual(sessao.dados.contexto.trocar_senha, true, 'exigência de troca');
+            igual((await a.chamar('GET', '/api/pessoas', { sessao: sessao.dados.token })).status, 403, 'administrar com senha temporária');
         },
     },
     {
-        name: 'mudar o vínculo encerra as sessões da pessoa alterada',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const conta = await contaNova(t, admin);
-            const dela = (await entrar(t, conta.email, conta.temporary_password)).data.token;
-            eq((await introspectar(t, dela)).data.active, true, 'antes da mudança');
-            const mudanca = await t.call('POST', `/api/users/${conta.id}`, {
-                session: admin,
-                body: { role: 'operator' },
+        nome: 'mudar o vínculo encerra as sessões da pessoa alterada',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const conta = await contaNova(a, administrador);
+            const dela = (await entrar(a, conta.email, conta.senha_temporaria)).dados.token;
+            igual((await introspectar(a, dela)).dados.ativa, true, 'antes da mudança');
+            const mudanca = await a.chamar('POST', `/api/pessoas/${conta.id}`, {
+                sessao: administrador,
+                corpo: { papel: 'solicitante' },
             });
             ok(mudanca.status < 300, 'mudança de papel');
-            eq((await introspectar(t, dela)).data.active, false, 'depois da mudança');
+            igual((await introspectar(a, dela)).dados.ativa, false, 'depois da mudança');
         },
     },
     {
-        name: 'redefinir a senha derruba as sessões e volta a exigir troca',
-        async run(t) {
-            const admin = (await entrar(t, t.fixtures.admin)).data.token;
-            const conta = await contaNova(t, admin);
-            const dela = (await entrar(t, conta.email, conta.temporary_password)).data.token;
-            const reset = await t.call('POST', `/api/users/${conta.id}/password`, {
-                session: admin,
-                body: {},
+        nome: 'redefinir a senha derruba as sessões e volta a exigir troca',
+        async rodar(a) {
+            const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+            const conta = await contaNova(a, administrador);
+            const dela = (await entrar(a, conta.email, conta.senha_temporaria)).dados.token;
+            const redefinida = await a.chamar('POST', `/api/pessoas/${conta.id}/senha`, {
+                sessao: administrador,
+                corpo: {},
             });
-            ok(reset.status < 300, 'redefinição');
-            ok(/^[A-HJ-NP-Z2-9]{10}\d{2}$/.test(reset.data.temporary_password), 'formato');
-            eq((await introspectar(t, dela)).data.active, false, 'a sessão dela cai');
-            const nova = await entrar(t, conta.email, reset.data.temporary_password);
-            eq(nova.data.principal.must_change_password, true, 'volta a exigir troca');
+            ok(redefinida.status < 300, 'redefinição');
+            ok(/^[A-HJ-NP-Z2-9]{10}\d{2}$/.test(redefinida.dados.senha_temporaria), 'formato');
+            igual((await introspectar(a, dela)).dados.ativa, false, 'a sessão dela cai');
+            const nova = await entrar(a, conta.email, redefinida.dados.senha_temporaria);
+            igual(nova.dados.contexto.trocar_senha, true, 'volta a exigir troca');
         },
     },
     {
-        name: 'o administrador não remove o próprio acesso',
-        async run(t) {
-            const sessao = await entrar(t, t.fixtures.admin);
-            const eu = sessao.data.principal.id;
-            for (const body of [{ active: false }, { role: 'viewer' }]) {
-                const tentativa = await t.call('POST', `/api/users/${eu}`, {
-                    session: sessao.data.token,
-                    body,
+        nome: 'o administrador não remove o próprio acesso',
+        async rodar(a) {
+            const sessao = await entrar(a, a.dados.administrador);
+            const eu = sessao.dados.contexto.id;
+            for (const corpo of [{ ativo: false }, { papel: 'consulta' }]) {
+                const tentativa = await a.chamar('POST', `/api/pessoas/${eu}`, {
+                    sessao: sessao.dados.token,
+                    corpo,
                 });
-                eq(tentativa.status, 400, 'auto-remoção com ' + JSON.stringify(body));
+                igual(tentativa.status, 400, 'auto-remoção com ' + JSON.stringify(corpo));
             }
-            ok((await t.call('GET', '/api/users', { session: sessao.data.token })).status < 300, 'continua administrando');
+            ok((await a.chamar('GET', '/api/pessoas', { sessao: sessao.dados.token })).status < 300, 'continua administrando');
         },
     },
     {
-        name: 'corpo fora do contrato vira 400 com o campo apontado',
-        async run(t) {
-            const recusa = await t.call('POST', '/api/auth/login', {
-                body: { company: t.fixtures.company, email: 'nao-e-email', password: 'x' },
+        nome: 'corpo fora do contrato vira 400 com o campo apontado',
+        async rodar(a) {
+            const recusa = await a.chamar('POST', '/api/entrar', {
+                corpo: { empresa: a.dados.empresa, email: 'nao-e-email', senha: 'x' },
             });
-            eq(recusa.status, 400, 'corpo inválido');
-            ok(Array.isArray(recusa.data.issues), 'a recusa precisa apontar os campos');
-            ok(recusa.data.issues.some((i) => i.field === 'email'), 'o campo errado precisa estar na lista');
+            igual(recusa.status, 400, 'corpo inválido');
+            ok(Array.isArray(recusa.dados.campos), 'a recusa precisa apontar os campos');
+            ok(recusa.dados.campos.some((c) => c.campo === 'email'), 'o campo errado precisa estar na lista');
+        },
+    },
+    {
+        /**
+         * Acrescentada depois que o duplo recusou o quadro de pessoas pedido por uma
+         * sessão de aplicativo. O cliente não informava o tipo, e o serviço trata
+         * "sessão do tipo errado" como sessão inexistente — corretamente.
+         */
+        nome: 'uma sessão de aplicativo serve as rotas de sessão quando o tipo vai junto',
+        async rodar(a) {
+            const aplicativo = await a.chamar('POST', '/api/entrar/aplicativo', {
+                corpo: {
+                    empresa: a.dados.empresa,
+                    email: a.dados.tecnico,
+                    senha: a.dados.senha,
+                    dispositivo_id: globalThis.crypto.randomUUID(),
+                },
+            });
+            ok(aplicativo.status < 300, 'entrada pelo aplicativo');
+            const token = aplicativo.dados.token;
+            // Sem o tipo, a pergunta é sobre uma sessão de painel que não existe.
+            igual((await a.chamar('GET', '/api/quadro', { sessao: token })).status, 401, 'quadro sem o tipo');
+            const comTipo = await a.chamar('GET', '/api/quadro', { sessao: token, tipo: 'aplicativo' });
+            ok(comTipo.status < 300, 'quadro com o tipo: ' + JSON.stringify(comTipo.dados));
+            ok(comTipo.dados.pessoas.length > 0, 'o quadro precisa vir preenchido');
+            const unidades = await a.chamar('GET', '/api/unidades', {
+                sessao: token,
+                tipo: 'aplicativo',
+            });
+            ok(unidades.status < 300, 'unidades com o tipo');
         },
     },
 ];
-/**
- * Acrescentada depois que o duplo recusou o quadro de pessoas pedido por uma
- * sessão de aplicativo. O cliente não informava o tipo, e o serviço trata
- * "sessão do tipo errado" como sessão inexistente — corretamente.
- */
-identityConformance.push({
-    name: 'uma sessão de aplicativo serve as rotas de sessão quando o tipo vai junto',
-    async run(t) {
-        const mobile = await t.call('POST', '/api/auth/mobile/login', {
-            body: {
-                company: t.fixtures.company,
-                email: t.fixtures.technician,
-                password: t.fixtures.password,
-                device_id: globalThis.crypto.randomUUID(),
-            },
-        });
-        ok(mobile.status < 300, 'login do aplicativo');
-        const token = mobile.data.token;
-        // Sem o tipo, a pergunta é sobre uma sessão web que não existe.
-        eq((await t.call('GET', '/api/roster', { session: token })).status, 401, 'quadro sem o tipo');
-        const comTipo = await t.call('GET', '/api/roster', { session: token, kind: 'mobile' });
-        ok(comTipo.status < 300, 'quadro com o tipo: ' + JSON.stringify(comTipo.data));
-        ok(comTipo.data.people.length > 0, 'o quadro precisa vir preenchido');
-        const unidades = await t.call('GET', '/api/sites', { session: token, kind: 'mobile' });
-        ok(unidades.status < 300, 'unidades com o tipo');
-    },
-});
 //# sourceMappingURL=conformance.js.map
