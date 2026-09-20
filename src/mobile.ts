@@ -1,93 +1,110 @@
 import { z } from 'zod';
 import {
-  checklistSchema,
-  idSchema,
-  loginSchema,
-  requestSchema,
-  type Role,
-  type Status,
+  esquemaChecklist,
+  esquemaId,
+  esquemaLogin,
+  esquemaSolicitacao,
+  type Papel,
+  type Situacao,
 } from './index.js';
 
-export const mobileLoginSchema = loginSchema.extend({ device_id: idSchema });
-export const manifestEntrySchema = z
+export const esquemaLoginAplicativo = esquemaLogin.extend({ dispositivo_id: esquemaId });
+
+export const esquemaItemManifesto = z
   .object({
-    entity: z.enum(['asset', 'order']),
-    id: idSchema,
+    entidade: z.enum(['ativo', 'ordem']),
+    id: esquemaId,
     etag: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
-export const pullSchema = z.object({ known: z.array(manifestEntrySchema).max(10_000) }).strict();
-export const mobileOperationSchema = z.discriminatedUnion('kind', [
-  z.object({ id: idSchema, kind: z.literal('request.create'), body: requestSchema }).strict(),
+export const esquemaDownload = z
+  .object({ conhecidos: z.array(esquemaItemManifesto).max(10_000) })
+  .strict();
+
+export const esquemaOperacaoAplicativo = z.discriminatedUnion('tipo', [
+  z
+    .object({ id: esquemaId, tipo: z.literal('solicitacao.criar'), corpo: esquemaSolicitacao })
+    .strict(),
   z
     .object({
-      id: idSchema,
-      kind: z.literal('order.checklist'),
-      order_id: idSchema,
-      body: checklistSchema,
+      id: esquemaId,
+      tipo: z.literal('ordem.checklist'),
+      ordem_id: esquemaId,
+      corpo: esquemaChecklist,
     })
     .strict(),
 ]);
-export type MobileOperation = z.infer<typeof mobileOperationSchema>;
-export type ManifestEntry = z.infer<typeof manifestEntrySchema>;
-export type MobileUser = {
-  id: string;
-  tenant_id: string;
-  site_id: string;
-  role: Role;
-  name: string;
-  email: string;
-  tenant_name: string;
-  site_name: string;
-  timezone: string;
-};
-export type MobileSession = { token: string; expires_at: string; user: MobileUser };
-export type MobileAsset = {
-  id: string;
-  code: string;
-  name: string;
-  location: string;
-  criticality: string;
-  manufacturer: string;
-  model: string;
-  qr_token: string;
-};
-export type MobileOrder = {
-  id: string;
-  number: number;
-  asset_id: string;
-  title: string;
-  description: string;
-  type: string;
-  priority: string;
-  status: Status;
-  due_date: string;
-  version: number;
-  checklist: { id: string; label: string; answer?: 'ok' | 'nok' | 'na' | null }[];
-  resolution: string;
-};
-export type CachedRecord = ManifestEntry & { data: MobileAsset | MobileOrder };
-export type PullResponse = {
-  protocol: 1;
-  scope: string;
-  user: MobileUser;
-  server_time: string;
-  upserts: CachedRecord[];
-  removed: { entity: 'asset' | 'order'; id: string }[];
-};
-export const mobileScope = (user: Pick<MobileUser, 'id' | 'tenant_id' | 'site_id'>) =>
-  `${user.tenant_id}:${user.site_id}:${user.id}`;
+export type OperacaoAplicativo = z.infer<typeof esquemaOperacaoAplicativo>;
+export type ItemManifesto = z.infer<typeof esquemaItemManifesto>;
 
-// Read QR identifiers only; never navigate to a URL obtained from a physical label.
-export function qrIdentifier(value: string): string | null {
-  const direct = idSchema.safeParse(value.trim());
-  if (direct.success) return direct.data;
+export type PessoaAplicativo = {
+  id: string;
+  empresa_id: string;
+  unidade_id: string;
+  papel: Papel;
+  nome: string;
+  email: string;
+  empresa_nome: string;
+  unidade_nome: string;
+  fuso: string;
+};
+export type SessaoAplicativo = {
+  token: string;
+  expira_em: string;
+  pessoa: PessoaAplicativo;
+};
+export type AtivoAplicativo = {
+  id: string;
+  codigo: string;
+  nome: string;
+  local: string;
+  criticidade: string;
+  fabricante: string;
+  modelo: string;
+  token_qr: string;
+};
+export type OrdemAplicativo = {
+  id: string;
+  numero: number;
+  ativo_id: string;
+  titulo: string;
+  descricao: string;
+  tipo: string;
+  prioridade: string;
+  situacao: Situacao;
+  prazo: string;
+  versao: number;
+  checklist: { id: string; rotulo: string; resposta?: 'ok' | 'nok' | 'na' | null }[];
+  resolucao: string;
+};
+export type RegistroLocal = ItemManifesto & { dados: AtivoAplicativo | OrdemAplicativo };
+export type RespostaDownload = {
+  protocolo: 1;
+  escopo: string;
+  pessoa: PessoaAplicativo;
+  hora_servidor: string;
+  gravar: RegistroLocal[];
+  removidos: { entidade: 'ativo' | 'ordem'; id: string }[];
+};
+
+export const escopoAplicativo = (
+  pessoa: Pick<PessoaAplicativo, 'id' | 'empresa_id' | 'unidade_id'>,
+) => `${pessoa.empresa_id}:${pessoa.unidade_id}:${pessoa.id}`;
+
+/**
+ * Lê identificadores de QR e nada além disso. Uma etiqueta é um objeto físico
+ * que qualquer pessoa pode colar na máquina: navegar para uma URL vinda dali
+ * seria obedecer a quem imprimiu o adesivo.
+ */
+export function identificadorQr(valor: string): string | null {
+  const direto = esquemaId.safeParse(valor.trim());
+  if (direto.success) return direto.data;
   try {
-    const url = new URL(value.trim());
+    const url = new URL(valor.trim());
     if (!['https:', 'http:'].includes(url.protocol)) return null;
-    const match = /^\/qr\/([a-f0-9-]+)\/?$/i.exec(url.pathname);
-    const parsed = idSchema.safeParse(match?.[1]);
-    return parsed.success ? parsed.data : null;
+    const achado = /^\/qr\/([a-f0-9-]+)\/?$/i.exec(url.pathname);
+    const lido = esquemaId.safeParse(achado?.[1]);
+    return lido.success ? lido.data : null;
   } catch {
     return null;
   }

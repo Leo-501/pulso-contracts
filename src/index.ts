@@ -1,239 +1,262 @@
 import { z } from 'zod';
 
-export const roles = [
-  'admin',
-  'manager',
-  'technician',
-  'operator',
-  'storekeeper',
-  'viewer',
+// O vocabulário do domínio está em docs/VOCABULARIO.md. Um termo, uma palavra,
+// em todo lugar: banco, API, contrato, painel e aplicativo. Não há tradução em
+// camada nenhuma — o que se chama `ordens` no PostgreSQL chama-se `ordens` aqui.
+
+export const papeis = [
+  'administrador',
+  'gestor',
+  'tecnico',
+  'solicitante',
+  'almoxarife',
+  'consulta',
 ] as const;
-export type Role = (typeof roles)[number];
-export const statuses = [
-  'open',
-  'planned',
-  'in_progress',
-  'paused',
-  'review',
-  'closed',
-  'cancelled',
+export type Papel = (typeof papeis)[number];
+
+export const situacoes = [
+  'aberta',
+  'planejada',
+  'em_execucao',
+  'pausada',
+  'validacao',
+  'concluida',
+  'cancelada',
 ] as const;
-export type Status = (typeof statuses)[number];
-export const statusLabels: Record<Status, string> = {
-  open: 'Aberta',
-  planned: 'Planejada',
-  in_progress: 'Em execução',
-  paused: 'Pausada',
-  review: 'Em validação',
-  closed: 'Encerrada',
-  cancelled: 'Cancelada',
+export type Situacao = (typeof situacoes)[number];
+
+export const rotulosSituacao: Record<Situacao, string> = {
+  aberta: 'Aberta',
+  planejada: 'Planejada',
+  em_execucao: 'Em execução',
+  pausada: 'Pausada',
+  validacao: 'Em validação',
+  concluida: 'Encerrada',
+  cancelada: 'Cancelada',
 };
-export const priorityLabels: Record<string, string> = {
-  critical: 'Crítica',
-  high: 'Alta',
-  medium: 'Média',
-  low: 'Baixa',
+export const rotulosPrioridade: Record<string, string> = {
+  critica: 'Crítica',
+  alta: 'Alta',
+  media: 'Média',
+  baixa: 'Baixa',
 };
-export const roleLabels: Record<Role, string> = {
-  admin: 'Administrador',
-  manager: 'Gestor de manutenção',
-  technician: 'Técnico',
-  operator: 'Solicitante',
-  storekeeper: 'Almoxarife',
-  viewer: 'Consulta',
+export const rotulosPapel: Record<Papel, string> = {
+  administrador: 'Administrador',
+  gestor: 'Gestor de manutenção',
+  tecnico: 'Técnico',
+  solicitante: 'Solicitante',
+  almoxarife: 'Almoxarife',
+  consulta: 'Consulta',
 };
-export const priority = z.enum(['critical', 'high', 'medium', 'low']);
-export const idSchema = z.string().uuid();
-const required = (max = 200) =>
+
+export const prioridade = z.enum(['critica', 'alta', 'media', 'baixa']);
+export const esquemaId = z.string().uuid();
+const obrigatorio = (max = 200) =>
   z.string().trim().min(2, 'Informe pelo menos 2 caracteres.').max(max);
-export const dateSchema = z
+export const esquemaData = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida.')
-  .refine((value) => {
-    const d = new Date(value + 'T12:00:00Z');
-    return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0, 10) === value;
+  .refine((valor) => {
+    const d = new Date(valor + 'T12:00:00Z');
+    return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0, 10) === valor;
   }, 'Data inválida.');
-export const loginSchema = z
-  .object({ company: required(80), email: z.email(), password: z.string().min(1).max(256) })
+
+export const esquemaLogin = z
+  .object({ empresa: obrigatorio(80), email: z.email(), senha: z.string().min(1).max(256) })
   .strict();
-export const assetSchema = z
+
+export const esquemaAtivo = z
   .object({
-    code: required(40),
-    name: required(120),
-    location: required(120),
-    criticality: priority.default('medium'),
-    manufacturer: z.string().trim().max(100).default(''),
-    model: z.string().trim().max(100).default(''),
-  })
-  .strict();
-export const requestSchema = z
-  .object({
-    asset_id: idSchema,
-    title: required(160),
-    description: required(3000),
-    machine_stopped: z.boolean().default(false),
-    observed_at: z.iso.datetime({ offset: true }).optional(),
-  })
-  .strict();
-export const orderSchema = z
-  .object({
-    asset_id: idSchema,
-    title: required(160),
-    description: z.string().trim().max(4000).default(''),
-    priority,
-    due_date: dateSchema,
-    assigned_to: idSchema.nullable().default(null),
-    type: z.enum(['corrective', 'preventive']).default('corrective'),
-  })
-  .strict();
-export const triageSchema = z
-  .object({
-    action: z.enum(['approve', 'reject']),
-    priority: priority.default('medium'),
-    due_date: dateSchema.optional(),
-    assigned_to: idSchema.nullable().default(null),
-    reason: z.string().trim().max(2000).default(''),
-  })
-  .strict();
-export const transitionSchema = z
-  .object({
-    status: z.enum(statuses),
-    version: z.number().int().positive(),
-    note: z.string().trim().max(4000).default(''),
-  })
-  .strict();
-export const partSchema = z
-  .object({
-    code: required(40),
-    name: required(160),
-    unit: z.enum(['un', 'L', 'kg', 'm']).default('un'),
-    minimum: z.number().nonnegative().max(1000000).default(0),
-  })
-  .strict();
-export const movementSchema = z
-  .object({
-    kind: z.enum(['receipt', 'issue', 'return', 'adjustment']),
-    quantity: z
-      .number()
-      .finite()
-      .refine((n) => n !== 0 && Math.abs(n) <= 1000000, 'Quantidade inválida.'),
-    reason: required(1000),
-    work_order_id: idSchema.nullable().default(null),
-  })
-  .strict();
-export const planSchema = z
-  .object({
-    asset_id: idSchema,
-    name: required(160),
-    frequency: z.enum(['weekly', 'monthly']),
-    interval: z.number().int().min(1).max(52).default(1),
-    anchor_date: dateSchema,
-    lead_days: z.number().int().min(0).max(30).default(7),
-    assigned_to: idSchema.nullable().default(null),
-    checklist: z.array(required(240)).min(1).max(30),
-  })
-  .strict();
-export const checklistSchema = z
-  .object({
-    version: z.number().int().positive(),
-    answers: z.record(z.string(), z.enum(['ok', 'nok', 'na'])),
+    codigo: obrigatorio(40),
+    nome: obrigatorio(120),
+    local: obrigatorio(120),
+    criticidade: prioridade.default('media'),
+    fabricante: z.string().trim().max(100).default(''),
+    modelo: z.string().trim().max(100).default(''),
   })
   .strict();
 
-const transitions: Record<Status, Status[]> = {
-  open: ['planned', 'in_progress', 'cancelled'],
-  planned: ['in_progress', 'cancelled'],
-  in_progress: ['paused', 'review', 'cancelled'],
-  paused: ['in_progress', 'cancelled'],
-  review: ['closed', 'in_progress'],
-  closed: [],
-  cancelled: [],
+export const esquemaSolicitacao = z
+  .object({
+    ativo_id: esquemaId,
+    titulo: obrigatorio(160),
+    descricao: obrigatorio(3000),
+    maquina_parada: z.boolean().default(false),
+    observado_em: z.iso.datetime({ offset: true }).optional(),
+  })
+  .strict();
+
+export const esquemaOrdem = z
+  .object({
+    ativo_id: esquemaId,
+    titulo: obrigatorio(160),
+    descricao: z.string().trim().max(4000).default(''),
+    prioridade,
+    prazo: esquemaData,
+    responsavel_id: esquemaId.nullable().default(null),
+    tipo: z.enum(['corretiva', 'preventiva']).default('corretiva'),
+  })
+  .strict();
+
+export const esquemaTriagem = z
+  .object({
+    acao: z.enum(['aprovar', 'rejeitar']),
+    prioridade: prioridade.default('media'),
+    prazo: esquemaData.optional(),
+    responsavel_id: esquemaId.nullable().default(null),
+    motivo: z.string().trim().max(2000).default(''),
+  })
+  .strict();
+
+export const esquemaTransicao = z
+  .object({
+    situacao: z.enum(situacoes),
+    versao: z.number().int().positive(),
+    observacao: z.string().trim().max(4000).default(''),
+  })
+  .strict();
+
+export const esquemaPeca = z
+  .object({
+    codigo: obrigatorio(40),
+    nome: obrigatorio(160),
+    // `unidade_medida`, e não `unidade`: unidade já é a filial da empresa, e as
+    // duas com o mesmo nome trocariam um problema de idioma por um de
+    // ambiguidade, que é pior.
+    unidade_medida: z.enum(['un', 'L', 'kg', 'm']).default('un'),
+    minimo: z.number().nonnegative().max(1000000).default(0),
+  })
+  .strict();
+
+export const esquemaMovimentacao = z
+  .object({
+    tipo: z.enum(['entrada', 'saida', 'devolucao', 'ajuste']),
+    quantidade: z
+      .number()
+      .finite()
+      .refine((n) => n !== 0 && Math.abs(n) <= 1000000, 'Quantidade inválida.'),
+    motivo: obrigatorio(1000),
+    ordem_id: esquemaId.nullable().default(null),
+  })
+  .strict();
+
+export const esquemaPlano = z
+  .object({
+    ativo_id: esquemaId,
+    nome: obrigatorio(160),
+    frequencia: z.enum(['semanal', 'mensal']),
+    intervalo: z.number().int().min(1).max(52).default(1),
+    data_base: esquemaData,
+    dias_antecedencia: z.number().int().min(0).max(30).default(7),
+    responsavel_id: esquemaId.nullable().default(null),
+    checklist: z.array(obrigatorio(240)).min(1).max(30),
+  })
+  .strict();
+
+export const esquemaChecklist = z
+  .object({
+    versao: z.number().int().positive(),
+    respostas: z.record(z.string(), z.enum(['ok', 'nok', 'na'])),
+  })
+  .strict();
+
+const transicoes: Record<Situacao, Situacao[]> = {
+  aberta: ['planejada', 'em_execucao', 'cancelada'],
+  planejada: ['em_execucao', 'cancelada'],
+  em_execucao: ['pausada', 'validacao', 'cancelada'],
+  pausada: ['em_execucao', 'cancelada'],
+  validacao: ['concluida', 'em_execucao'],
+  concluida: [],
+  cancelada: [],
 };
-export function allowedTransitions(status: Status, role: Role): Status[] {
-  if (role === 'admin' || role === 'manager') return transitions[status];
-  if (role === 'technician')
-    return transitions[status].filter(
-      (s) => ['in_progress', 'paused', 'review'].includes(s) && status !== 'review',
+export function transicoesPermitidas(situacao: Situacao, papel: Papel): Situacao[] {
+  if (papel === 'administrador' || papel === 'gestor') return transicoes[situacao];
+  if (papel === 'tecnico')
+    return transicoes[situacao].filter(
+      (s) => ['em_execucao', 'pausada', 'validacao'].includes(s) && situacao !== 'validacao',
     );
   return [];
 }
-export function canManage(role: Role) {
-  return role === 'admin' || role === 'manager';
+export function podeGerenciar(papel: Papel) {
+  return papel === 'administrador' || papel === 'gestor';
 }
-export function localDate(now = new Date(), timezone = 'America/Sao_Paulo') {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone,
+
+export function dataLocal(agora = new Date(), fuso = 'America/Sao_Paulo') {
+  const partes = new Intl.DateTimeFormat('en-CA', {
+    timeZone: fuso,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(now);
-  return ['year', 'month', 'day'].map((key) => parts.find((p) => p.type === key)!.value).join('-');
+  }).formatToParts(agora);
+  return ['year', 'month', 'day']
+    .map((chave) => partes.find((p) => p.type === chave)!.value)
+    .join('-');
 }
-export function addDays(date: string, days: number) {
-  const d = new Date(date + 'T12:00:00Z');
-  d.setUTCDate(d.getUTCDate() + days);
+export function somarDias(data: string, dias: number) {
+  const d = new Date(data + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + dias);
   return d.toISOString().slice(0, 10);
 }
-export function occurrenceDate(
-  anchor: string,
-  frequency: 'weekly' | 'monthly',
-  interval: number,
-  index: number,
+export function dataOcorrencia(
+  base: string,
+  frequencia: 'semanal' | 'mensal',
+  intervalo: number,
+  indice: number,
 ) {
-  if (frequency === 'weekly') return addDays(anchor, 7 * interval * index);
-  const [year, month, day] = anchor.split('-').map(Number);
-  const d = new Date(Date.UTC(year, month - 1 + interval * index, 1, 12));
-  const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
-  d.setUTCDate(Math.min(day, last));
+  if (frequencia === 'semanal') return somarDias(base, 7 * intervalo * indice);
+  const [ano, mes, dia] = base.split('-').map(Number);
+  const d = new Date(Date.UTC(ano, mes - 1 + intervalo * indice, 1, 12));
+  const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(dia, ultimo));
   return d.toISOString().slice(0, 10);
 }
 
 // --- Edição e inativação de cadastros -------------------------------------
 // Atualização parcial: os campos ausentes preservam o valor atual.
-export const assetUpdateSchema = assetSchema.partial().strict();
-export const partUpdateSchema = partSchema.partial().strict();
-// A recorrência não é editável neste incremento: mudar frequência, intervalo ou âncora
-// exige recalcular ocorrências já geradas, o que é versionamento de plano e continua
-// no backlog. Só os campos sem efeito retroativo são aceitos aqui.
-export const planUpdateSchema = z
+export const esquemaAtivoEdicao = esquemaAtivo.partial().strict();
+export const esquemaPecaEdicao = esquemaPeca.partial().strict();
+// A recorrência não é editável neste incremento: mudar frequência, intervalo ou
+// data base exige recalcular ocorrências já geradas, o que é versionamento de
+// plano e continua no backlog. Só os campos sem efeito retroativo são aceitos.
+export const esquemaPlanoEdicao = z
   .object({
-    name: required(160).optional(),
-    lead_days: z.number().int().min(0).max(30).optional(),
-    assigned_to: idSchema.nullable().optional(),
+    nome: obrigatorio(160).optional(),
+    dias_antecedencia: z.number().int().min(0).max(30).optional(),
+    responsavel_id: esquemaId.nullable().optional(),
   })
   .strict();
-export const activationSchema = z.object({ active: z.boolean() }).strict();
+export const esquemaAtivacao = z.object({ ativo: z.boolean() }).strict();
 
 // --- Gestão de contas ------------------------------------------------------
-export const passwordSchema = z
+export const esquemaSenha = z
   .object({
-    current: z.string().min(1).max(256),
-    next: z
+    atual: z.string().min(1).max(256),
+    nova: z
       .string()
       .min(10, 'Use pelo menos 10 caracteres.')
       .max(256)
       .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), 'Combine letras e números.'),
   })
   .strict()
-  .refine((v) => v.current !== v.next, {
+  .refine((v) => v.atual !== v.nova, {
     message: 'A nova senha precisa ser diferente da atual.',
-    path: ['next'],
+    path: ['nova'],
   });
-export const userSchema = z
+export const esquemaPessoa = z
   .object({
-    name: required(120),
+    nome: obrigatorio(120),
     email: z.email(),
-    role: z.enum(roles),
-    site_ids: z.array(idSchema).min(1).max(50),
+    papel: z.enum(papeis),
+    unidade_ids: z.array(esquemaId).min(1).max(50),
   })
   .strict();
-export const membershipSchema = z
+export const esquemaVinculo = z
   .object({
-    role: z.enum(roles).optional(),
-    active: z.boolean().optional(),
-    site_ids: z.array(idSchema).min(1).max(50).optional(),
+    papel: z.enum(papeis).optional(),
+    ativo: z.boolean().optional(),
+    unidade_ids: z.array(esquemaId).min(1).max(50).optional(),
   })
   .strict();
 
 // --- Seleção de unidade ----------------------------------------------------
-export const siteSchema = z.object({ site_id: idSchema }).strict();
+export const esquemaUnidade = z.object({ unidade_id: esquemaId }).strict();

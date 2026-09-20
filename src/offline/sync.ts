@@ -1,63 +1,70 @@
-import type { ManifestEntry, MobileOperation, PullResponse } from '../mobile.js';
-import { OfflineStore } from './store.js';
+import type { ItemManifesto, OperacaoAplicativo, RespostaDownload } from '../mobile.js';
+import { BaseLocal } from './store.js';
 
-export class SyncError extends Error {
+export class ErroSincronizacao extends Error {
   constructor(
-    message: string,
+    mensagem: string,
     public status: number,
   ) {
-    super(message);
+    super(mensagem);
   }
 }
-export interface SyncTransport {
-  pull(known: ManifestEntry[]): Promise<PullResponse>;
-  send(operation: MobileOperation): Promise<unknown>;
+
+export interface TransporteSincronizacao {
+  baixar(conhecidos: ItemManifesto[]): Promise<RespostaDownload>;
+  enviar(operacao: OperacaoAplicativo): Promise<unknown>;
 }
-export class SyncEngine {
-  private running?: Promise<void>;
+
+export class MotorSincronizacao {
+  private emCurso?: Promise<void>;
   constructor(
-    private store: OfflineStore,
-    private transport: SyncTransport,
+    private base: BaseLocal,
+    private transporte: TransporteSincronizacao,
   ) {}
-  sync() {
-    if (this.running) return this.running;
-    this.running = this.run().finally(() => {
-      this.running = undefined;
+
+  /** Cliques simultâneos em sincronizar compartilham o mesmo envio. */
+  sincronizar() {
+    if (this.emCurso) return this.emCurso;
+    this.emCurso = this.rodar().finally(() => {
+      this.emCurso = undefined;
     });
-    return this.running;
+    return this.emCurso;
   }
-  private async run() {
+
+  private async rodar() {
     try {
-      // Refresh authorizations and removals before attempting queued writes.
-      await this.store.apply(await this.transport.pull(await this.store.manifest()));
-      for (const entry of await this.store.queue()) {
-        if (entry.state !== 'pending') continue;
+      // Autorizações e remoções vêm antes de tentar escrever o que está na fila:
+      // quem perdeu acesso não deve conseguir gravar com o escopo antigo.
+      await this.base.aplicar(await this.transporte.baixar(await this.base.manifesto()));
+      for (const item of await this.base.fila()) {
+        if (item.situacao !== 'pendente') continue;
         try {
-          const receipt = await this.transport.send(JSON.parse(entry.payload));
-          await this.store.mark(entry.id, 'confirmed', null, receipt);
-        } catch (error) {
+          const recibo = await this.transporte.enviar(JSON.parse(item.corpo));
+          await this.base.marcar(item.id, 'confirmada', null, recibo);
+        } catch (erro) {
           if (
-            !(error instanceof SyncError) ||
-            error.status === 0 ||
-            error.status >= 500 ||
-            error.status === 429
+            !(erro instanceof ErroSincronizacao) ||
+            erro.status === 0 ||
+            erro.status >= 500 ||
+            erro.status === 429
           )
-            throw error;
-          if (error.status === 401) throw error;
-          await this.store.mark(
-            entry.id,
-            error.status === 409 ? 'conflict' : 'rejected',
-            error.message,
+            throw erro;
+          if (erro.status === 401) throw erro;
+          await this.base.marcar(
+            item.id,
+            erro.status === 409 ? 'conflito' : 'rejeitada',
+            erro.message,
           );
         }
       }
-      await this.store.apply(await this.transport.pull(await this.store.manifest()));
-    } catch (error) {
-      if (error instanceof SyncError && error.status === 401) {
-        // Never mask an authorization failure with a local I/O error; the caller must lock its UI.
-        await this.store.lockCache().catch(() => {});
+      await this.base.aplicar(await this.transporte.baixar(await this.base.manifesto()));
+    } catch (erro) {
+      if (erro instanceof ErroSincronizacao && erro.status === 401) {
+        // Falha de disco ao limpar o cache não pode mascarar a revogação: quem
+        // chama precisa bloquear a interface de qualquer jeito.
+        await this.base.bloquearCache().catch(() => {});
       }
-      throw error;
+      throw erro;
     }
   }
 }
