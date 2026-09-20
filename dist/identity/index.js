@@ -165,6 +165,21 @@ export class IdentityClient {
             this.cache.delete(kind + ':' + token);
     }
     /**
+     * Descarta o cache inteiro.
+     *
+     * Existe para a revogação pedida por uma pessoa. O cache é indexado por token,
+     * e um administrador que desativa um vínculo não conhece os tokens de quem ele
+     * desativou — são opacos e vivem na identidade. Sem isto, quem acabou de
+     * perder o acesso seguiria entrando pela janela inteira do cache.
+     *
+     * É grosseiro de propósito: custa uma introspecção a mais por sessão viva, e
+     * mudança de acesso é rara. O contrário — deixar valer um acesso que alguém
+     * mandou cortar — não é aceitável em nenhuma janela.
+     */
+    forgetAll() {
+        this.cache.clear();
+    }
+    /**
      * Autentica e devolve a sessão. O produto guarda o token como preferir — o
      * painel em cookie próprio, o aplicativo em armazenamento seguro. A identidade
      * não emite cookie: cookie é preso a domínio, e produtos em hosts diferentes
@@ -200,8 +215,10 @@ export class IdentityClient {
             body,
             session: token,
         });
-        // `must_change_password` mudou; o contexto em cache está desatualizado.
-        this.forget(token);
+        // A troca encerrou as outras sessões da pessoa e mudou
+        // `must_change_password`. Os dois efeitos alcançam entradas que este
+        // processo não sabe associar a ela.
+        this.forgetAll();
         return result;
     }
     /** Quadro de pessoas da empresa da sessão, para o produto projetar. */
@@ -220,13 +237,20 @@ export class IdentityClient {
             body,
             session: token,
         });
+        // A identidade acabou de apagar as sessões da pessoa alterada. O cache aqui é
+        // por token e não sabe quais eram dela, então descarta tudo.
+        this.forgetAll();
         // Mudar papel ou unidades encerra as sessões da pessoa alterada. O cache
         // desta instância é por token, então não há o que invalidar aqui — mas o
         // produto precisa reprojetar, e é por isso que isto devolve em vez de void.
         return result;
     }
-    resetAccountPassword(token, id) {
-        return this.call('/api/users/' + encodeURIComponent(id) + '/password', resetSchema, { method: 'POST', session: token });
+    async resetAccountPassword(token, id) {
+        const result = await this.call('/api/users/' + encodeURIComponent(id) + '/password', resetSchema, { method: 'POST', session: token });
+        // Redefinir a senha derruba todas as sessões da pessoa, inclusive as que
+        // estão em cache aqui sob tokens que este processo não sabe associar a ela.
+        this.forgetAll();
+        return result;
     }
     /**
      * A introspecção nunca recusa um token com 4xx — token inválido é `active:false`

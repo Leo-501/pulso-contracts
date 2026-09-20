@@ -309,3 +309,40 @@ test('nas demais rotas o código separa credencial do produto de senha da pessoa
   const daPessoa = transport(() => ({ __status: 401, message: 'Empresa, e-mail ou senha inválidos.' }));
   await assert.rejects(() => client(daPessoa.fetchImpl).login({}), IdentityRejectedError);
 });
+
+test('mudar o vínculo de alguém descarta o cache, e não só o token de quem mudou', async () => {
+  // O administrador não conhece os tokens de quem ele desativou: eles são opacos
+  // e vivem na identidade. Sem descartar tudo, quem perdeu o acesso continuaria
+  // entrando pela janela inteira do cache — revogação pedida por uma pessoa,
+  // adiada por uma otimização.
+  const { state, fetchImpl } = transport((_b, _call, url) =>
+    url.includes('/api/users/')
+      ? { ok: true }
+      : { active: true, principal: principal(), expires_at: 'depois' },
+  );
+  const c = client(fetchImpl);
+  await c.introspect('token-de-outra-pessoa');
+  assert.equal((await c.introspect('token-de-outra-pessoa')).active, true);
+  assert.equal(state.calls, 1, 'a segunda veio do cache');
+  await c.updateAccount('token-do-admin', 'alguem', { active: false });
+  await c.introspect('token-de-outra-pessoa');
+  assert.equal(state.calls, 3, 'a introspecção precisa ir à identidade de novo');
+});
+
+test('redefinir senha e trocar a própria senha também descartam o cache', async () => {
+  for (const acao of [
+    (c: IdentityClient) => c.resetAccountPassword('admin', 'alguem'),
+    (c: IdentityClient) => c.changePassword('minha', { current: 'a', next: 'b' }),
+  ]) {
+    const { state, fetchImpl } = transport((_b, _call, url) =>
+      url.includes('/password')
+        ? { ok: true, id: randomUUID(), temporary_password: 'ABCDEFGHJK12' }
+        : { active: true, principal: principal(), expires_at: 'depois' },
+    );
+    const c = client(fetchImpl);
+    await c.introspect('outra');
+    await acao(c);
+    await c.introspect('outra');
+    assert.equal(state.calls, 3);
+  }
+});

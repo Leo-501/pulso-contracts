@@ -205,6 +205,19 @@ export declare class IdentityClient {
     /** Descarta a entrada em cache. O produto chama isto ao encerrar a sessão. */
     forget(token: string): void;
     /**
+     * Descarta o cache inteiro.
+     *
+     * Existe para a revogação pedida por uma pessoa. O cache é indexado por token,
+     * e um administrador que desativa um vínculo não conhece os tokens de quem ele
+     * desativou — são opacos e vivem na identidade. Sem isto, quem acabou de
+     * perder o acesso seguiria entrando pela janela inteira do cache.
+     *
+     * É grosseiro de propósito: custa uma introspecção a mais por sessão viva, e
+     * mudança de acesso é rara. O contrário — deixar valer um acesso que alguém
+     * mandou cortar — não é aceitável em nenhuma janela.
+     */
+    forgetAll(): void;
+    /**
      * Autentica e devolve a sessão. O produto guarda o token como preferir — o
      * painel em cookie próprio, o aplicativo em armazenamento seguro. A identidade
      * não emite cookie: cookie é preso a domínio, e produtos em hosts diferentes

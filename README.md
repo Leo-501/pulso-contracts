@@ -22,7 +22,7 @@ O cliente de sincronização mora aqui, e não no repositório do aplicativo, po
 O pacote é distribuído por tag git, sem registry:
 
 ```sh
-pnpm add github:Leo-501/pulso-contracts#v0.7.2
+pnpm add github:Leo-501/pulso-contracts#v0.7.3
 ```
 
 O `dist/` compilado é **versionado neste repositório**, e o pacote não tem script `prepare`. Os consumidores recebem JavaScript e `.d.ts` prontos — não o TypeScript cru. É por isso que o Metro do aplicativo não precisa do `resolveRequest` customizado que existia antes da divisão.
