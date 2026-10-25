@@ -266,11 +266,13 @@ export function criarIdentidadeDuplo(spec: EspecificacaoDuplo): IdentidadeDuplo 
     return contexto;
   }
 
-  /** Um administrador só concede as unidades em que ele próprio atua. */
+  const unidadesDa = (empresa: string) =>
+    [...unidades.values()].filter((u) => u.empresa_id === empresa);
+  /** O administrador concede qualquer unidade da empresa dele, e nenhuma de outra. */
   function unidadesPermitidas(sessao: Sessao, ids: string[]) {
-    const minhas = porId(sessao.pessoa)!.vinculos.get(sessao.empresa)!.unidades;
-    if (!ids.every((id) => minhas.has(id)))
-      throw new ErroHttp(400, 'Só é possível conceder acesso às unidades em que você atua.');
+    const daEmpresa = new Set(unidadesDa(sessao.empresa).map((u) => u.id));
+    if (!ids.every((id) => daEmpresa.has(id)))
+      throw new ErroHttp(400, 'Só é possível conceder acesso às unidades desta empresa.');
   }
 
   const temporaria = () => {
@@ -417,8 +419,7 @@ export function criarIdentidadeDuplo(spec: EspecificacaoDuplo): IdentidadeDuplo 
               unidade_ids: [...v.unidades].sort(),
             };
           }),
-        unidades: [...porId(sessao.pessoa)!.vinculos.get(sessao.empresa)!.unidades]
-          .map((id) => unidadePorId(id)!)
+        unidades: unidadesDa(sessao.empresa)
           .sort((a, b) => a.nome.localeCompare(b.nome))
           .map((u) => ({ id: u.id, nome: u.nome, cidade: u.cidade })),
       };
@@ -478,13 +479,19 @@ export function criarIdentidadeDuplo(spec: EspecificacaoDuplo): IdentidadeDuplo 
         (dados.ativo === false || (dados.papel && dados.papel !== 'administrador'))
       )
         throw new ErroHttp(400, 'Você não pode remover o próprio acesso de administrador.');
+      if (dados.unidade_ids) unidadesPermitidas(sessao, dados.unidade_ids);
+      if (dados.nome !== undefined && pessoa.vinculos.size > 1)
+        throw new ErroHttp(
+          409,
+          'Esta pessoa também entra em outras empresas, e o nome vale em todas: não dá para corrigi-lo daqui.',
+        );
+      if (dados.nome !== undefined) pessoa.nome = dados.nome;
       if (dados.papel !== undefined) vinculo.papel = dados.papel;
       if (dados.ativo !== undefined) vinculo.ativo = dados.ativo;
-      if (dados.unidade_ids) {
-        unidadesPermitidas(sessao, dados.unidade_ids);
-        vinculo.unidades = new Set(dados.unidade_ids);
-      }
-      derrubarSessoes(pessoa.id, sessao.empresa);
+      if (dados.unidade_ids) vinculo.unidades = new Set(dados.unidade_ids);
+      // O nome não é acesso: corrigi-lo não encerra a sessão de ninguém.
+      const { nome, ...acesso } = dados;
+      if (Object.keys(acesso).length) derrubarSessoes(pessoa.id, sessao.empresa);
       return { ok: true };
     }
     throw new ErroHttp(404, 'Rota inexistente na identidade de teste: ' + metodo + ' ' + caminho);

@@ -260,8 +260,14 @@ export const esquemaPessoa = z
     unidade_ids: z.array(esquemaId).min(1).max(50),
   })
   .strict();
+/**
+ * O que o administrador muda numa pessoa da empresa. O nome é da pessoa, e não
+ * do vínculo: corrigido aqui, ele vale em todas as empresas dela. O e-mail não
+ * muda por aqui, porque é com ele que a pessoa entra em todas.
+ */
 export const esquemaVinculo = z
   .object({
+    nome: obrigatorio(120).optional(),
     papel: z.enum(papeis).optional(),
     ativo: z.boolean().optional(),
     unidade_ids: z.array(esquemaId).min(1).max(50).optional(),

@@ -187,7 +187,13 @@ export declare const esquemaPessoa: z.ZodObject<{
     }>;
     unidade_ids: z.ZodArray<z.ZodString>;
 }, z.core.$strict>;
+/**
+ * O que o administrador muda numa pessoa da empresa. O nome é da pessoa, e não
+ * do vínculo: corrigido aqui, ele vale em todas as empresas dela. O e-mail não
+ * muda por aqui, porque é com ele que a pessoa entra em todas.
+ */
 export declare const esquemaVinculo: z.ZodObject<{
+    nome: z.ZodOptional<z.ZodString>;
     papel: z.ZodOptional<z.ZodEnum<{
         administrador: "administrador";
         gestor: "gestor";

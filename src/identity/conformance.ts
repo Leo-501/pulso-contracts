@@ -498,6 +498,58 @@ export const conformidadeIdentidade: VerificacaoConformidade[] = [
     },
   },
   {
+    nome: 'o administrador corrige o nome sem encerrar as sessões da pessoa',
+    async rodar(a) {
+      const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+      const conta = await contaNova(a, administrador);
+      const dela = (await entrar(a, conta.email, conta.senha_temporaria)).dados.token;
+      const mudanca = await a.chamar('POST', `/api/pessoas/${conta.id}`, {
+        sessao: administrador,
+        corpo: { nome: 'Nome Corrigido' },
+      });
+      ok(mudanca.status < 300, 'correção do nome: ' + JSON.stringify(mudanca.dados));
+      const intro = await introspectar(a, dela);
+      igual(intro.dados.ativa, true, 'o nome não é acesso: a sessão dela continua');
+      igual(intro.dados.contexto.nome, 'Nome Corrigido', 'a sessão já traz o nome novo');
+      const quadro = await a.chamar('GET', '/api/quadro', { sessao: administrador });
+      igual(
+        quadro.dados.pessoas.find((p: any) => p.id === conta.id).nome,
+        'Nome Corrigido',
+        'o quadro também, para o produto projetar',
+      );
+      const vazio = await a.chamar('POST', `/api/pessoas/${conta.id}`, {
+        sessao: administrador,
+        corpo: { nome: ' ' },
+      });
+      igual(vazio.status, 400, 'nome em branco é recusado');
+    },
+  },
+  {
+    nome: 'o administrador concede qualquer unidade da empresa',
+    async rodar(a) {
+      const administrador = (await entrar(a, a.dados.administrador)).dados.token;
+      const { unidades } = (await a.chamar('GET', '/api/pessoas', { sessao: administrador })).dados;
+      const quadro = await a.chamar('GET', '/api/quadro', { sessao: administrador });
+      igual(
+        unidades
+          .map((u: any) => u.id)
+          .sort()
+          .join(),
+        quadro.dados.unidades
+          .map((u: any) => u.id)
+          .sort()
+          .join(),
+        'a lista para conceder é a da empresa, e não só as unidades do administrador',
+      );
+      const conta = await contaNova(a, administrador);
+      const mudanca = await a.chamar('POST', `/api/pessoas/${conta.id}`, {
+        sessao: administrador,
+        corpo: { unidade_ids: unidades.map((u: any) => u.id) },
+      });
+      ok(mudanca.status < 300, 'todas as unidades da empresa: ' + JSON.stringify(mudanca.dados));
+    },
+  },
+  {
     nome: 'redefinir a senha derruba as sessões e volta a exigir troca',
     async rodar(a) {
       const administrador = (await entrar(a, a.dados.administrador)).dados.token;
