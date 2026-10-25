@@ -40,7 +40,8 @@ export type Contexto = {
  * Distinguir "inválido" de "erro do serviço" por código HTTP transformaria a
  * rota em oráculo para quem tivesse a credencial de serviço.
  */
-export type Introspeccao = { ativa: false } | { ativa: true; contexto: Contexto; expira_em: string };
+export type Introspeccao =
+  { ativa: false } | { ativa: true; contexto: Contexto; expira_em: string };
 
 const esquemaContexto = z.object({
   id: esquemaId,
@@ -137,6 +138,15 @@ export type ListaContas = z.infer<typeof esquemaListaContas>;
 export const esquemaListaUnidades = z.array(
   z.object({ id: esquemaId, nome: z.string(), cidade: z.string() }),
 );
+
+/**
+ * Empresas em que a pessoa tem vínculo ativo, em ordem de nome. `padrao` marca a
+ * que abre quando ela entra sem informar a empresa; no máximo uma vem marcada.
+ */
+export const esquemaListaEmpresas = z.array(
+  z.object({ id: esquemaId, nome: z.string(), padrao: z.boolean() }),
+);
+export type ListaEmpresas = z.infer<typeof esquemaListaEmpresas>;
 
 export type OpcoesClienteIdentidade = {
   baseUrl: string;
@@ -286,6 +296,23 @@ export class ClienteIdentidade {
     this.esquecer(token);
     return emitida;
   }
+  empresas(token: string) {
+    return this.chamar('/api/empresas', esquemaListaEmpresas, { metodo: 'GET', sessao: token });
+  }
+  /** Como a troca de unidade: sessão nova na outra empresa, a anterior revogada. */
+  async trocarEmpresa(token: string, corpo: unknown) {
+    const emitida = await this.chamar('/api/empresa', esquemaSessaoEmitida, {
+      metodo: 'POST',
+      corpo,
+      sessao: token,
+    });
+    this.esquecer(token);
+    return emitida;
+  }
+  /** A empresa que abre na próxima entrada sem empresa. A sessão atual não muda. */
+  definirEmpresaPadrao(token: string, corpo: unknown) {
+    return this.chamar('/api/empresa/padrao', esquemaOk, { metodo: 'POST', corpo, sessao: token });
+  }
   async trocarSenha(token: string, corpo: unknown) {
     const resultado = await this.chamar('/api/senha', esquemaOk, {
       metodo: 'POST',
@@ -394,9 +421,7 @@ export class ClienteIdentidade {
       // A identidade marca a falha da credencial do produto. Ela não é recusa do
       // usuário: ninguém acerta a senha se o produto não consegue nem perguntar.
       if (dados.codigo === 'credencial_servico')
-        throw new IdentidadeIndisponivel(
-          new Error(dados.mensagem ?? 'credencial de serviço'),
-        );
+        throw new IdentidadeIndisponivel(new Error(dados.mensagem ?? 'credencial de serviço'));
       throw new IdentidadeRecusou(
         resposta.status,
         dados.mensagem ?? 'Não foi possível concluir a operação.',

@@ -99,6 +99,7 @@ function alvo(duplo: ReturnType<typeof cenario>): AlvoConformidade {
       administrador: 'admin@demo.local',
       duasUnidades: 'gestor@demo.local',
       tecnico: 'tecnico@demo.local',
+      duasEmpresas: 'tecnico@demo.local',
     },
   };
 }

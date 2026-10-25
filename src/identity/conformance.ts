@@ -31,6 +31,8 @@ export type AlvoConformidade = {
     duasUnidades: string;
     /** Técnico, para exercitar papel sem poder administrativo. */
     tecnico: string;
+    /** Pessoa com vínculo ativo em duas empresas. */
+    duasEmpresas: string;
   };
 };
 
@@ -59,8 +61,19 @@ async function entrar(a: AlvoConformidade, email: string, senha?: string, empres
     },
   });
 }
-const introspectar = (a: AlvoConformidade, token: string, tipo: 'painel' | 'aplicativo' = 'painel') =>
-  a.chamar('POST', '/api/introspeccao', { corpo: { token, tipo } });
+const entrarSemEmpresa = (a: AlvoConformidade, email: string, senha?: string) =>
+  a.chamar('POST', '/api/entrar', { corpo: { email, senha: senha ?? a.dados.senha } });
+const empresasDe = async (a: AlvoConformidade, token: string) =>
+  (await a.chamar('GET', '/api/empresas', { sessao: token })).dados as {
+    id: string;
+    nome: string;
+    padrao: boolean;
+  }[];
+const introspectar = (
+  a: AlvoConformidade,
+  token: string,
+  tipo: 'painel' | 'aplicativo' = 'painel',
+) => a.chamar('POST', '/api/introspeccao', { corpo: { token, tipo } });
 
 /** Cria uma conta descartável e devolve o que for preciso para usá-la. */
 async function contaNova(
@@ -68,7 +81,8 @@ async function contaNova(
   administrador: string,
   extra: Record<string, unknown> = {},
 ) {
-  const unidades = (await a.chamar('GET', '/api/pessoas', { sessao: administrador })).dados.unidades;
+  const unidades = (await a.chamar('GET', '/api/pessoas', { sessao: administrador })).dados
+    .unidades;
   const criada = await a.chamar('POST', '/api/pessoas', {
     sessao: administrador,
     corpo: {
@@ -258,6 +272,100 @@ export const conformidadeIdentidade: VerificacaoConformidade[] = [
         corpo: { unidade_id: semVinculo.id },
       });
       igual(recusa.status, 403, 'unidade fora do vínculo');
+    },
+  },
+  {
+    nome: 'sem empresa, a entrada abre a empresa padrão, e a padrão é escolha da pessoa',
+    async rodar(a) {
+      const sessao = await entrarSemEmpresa(a, a.dados.duasEmpresas);
+      ok(sessao.status < 300, 'entrada sem empresa');
+      const inicial = sessao.dados.contexto.empresa_id;
+      const lista = await empresasDe(a, sessao.dados.token);
+      ok(lista.length >= 2, 'quem tem duas empresas precisa ver duas');
+      const nomes = lista.map((e) => e.nome);
+      ok(
+        JSON.stringify(nomes) === JSON.stringify([...nomes].sort((x, y) => x.localeCompare(y))),
+        'lista em ordem de nome',
+      );
+      igual(lista.filter((e) => e.padrao).length, 1, 'uma empresa padrão');
+      igual(lista.find((e) => e.padrao)!.id, inicial, 'a padrão é a que abriu');
+      const outra = lista.find((e) => e.id !== inicial)!;
+      const definida = await a.chamar('POST', '/api/empresa/padrao', {
+        sessao: sessao.dados.token,
+        corpo: { empresa_id: outra.id },
+      });
+      ok(definida.status < 300, 'definir a empresa padrão');
+      igual(
+        (await introspectar(a, sessao.dados.token)).dados.contexto?.empresa_id,
+        inicial,
+        'definir a padrão não muda a sessão atual',
+      );
+      const depois = await entrarSemEmpresa(a, a.dados.duasEmpresas);
+      igual(depois.dados.contexto.empresa_id, outra.id, 'a próxima entrada abre a nova padrão');
+      // Devolve a padrão de antes: as outras verificações entram por ela.
+      await a.chamar('POST', '/api/empresa/padrao', {
+        sessao: depois.dados.token,
+        corpo: { empresa_id: inicial },
+      });
+      igual(
+        (await entrarSemEmpresa(a, a.dados.duasEmpresas)).dados.contexto.empresa_id,
+        inicial,
+        'a padrão de volta',
+      );
+    },
+  },
+  {
+    nome: 'trocar de empresa emite sessão nova e revoga a anterior',
+    async rodar(a) {
+      const sessao = await entrarSemEmpresa(a, a.dados.duasEmpresas);
+      const outra = (await empresasDe(a, sessao.dados.token)).find(
+        (e) => e.id !== sessao.dados.contexto.empresa_id,
+      )!;
+      const nova = await a.chamar('POST', '/api/empresa', {
+        sessao: sessao.dados.token,
+        corpo: { empresa_id: outra.id },
+      });
+      ok(nova.status < 300, 'troca de empresa');
+      igual(nova.dados.contexto.empresa_id, outra.id, 'a empresa nova');
+      igual(nova.dados.contexto.empresa_nome, outra.nome, 'o nome da empresa nova');
+      ok(nova.dados.token !== sessao.dados.token, 'o token precisa ser outro');
+      igual(
+        (await introspectar(a, sessao.dados.token)).dados.ativa,
+        false,
+        'a anterior fica revogada',
+      );
+      igual(
+        (await introspectar(a, nova.dados.token)).dados.contexto?.empresa_id,
+        outra.id,
+        'a nova vale na introspecção',
+      );
+    },
+  },
+  {
+    nome: 'empresa sem vínculo é recusada na troca e como padrão',
+    async rodar(a) {
+      const sessao = await entrarSemEmpresa(a, a.dados.duasEmpresas);
+      const alheia = { empresa_id: globalThis.crypto.randomUUID() };
+      const troca = await a.chamar('POST', '/api/empresa', {
+        sessao: sessao.dados.token,
+        corpo: alheia,
+      });
+      igual(troca.status, 403, 'troca para empresa sem vínculo');
+      const padrao = await a.chamar('POST', '/api/empresa/padrao', {
+        sessao: sessao.dados.token,
+        corpo: alheia,
+      });
+      igual(padrao.status, 403, 'padrão em empresa sem vínculo');
+    },
+  },
+  {
+    nome: 'sem empresa, senha errada e conta inexistente dão a mesma recusa',
+    async rodar(a) {
+      const senha = await entrarSemEmpresa(a, a.dados.administrador, 'senha-errada-de-proposito');
+      igual(senha.status, 401, 'status da senha errada');
+      const conta = await entrarSemEmpresa(a, novoEmail());
+      igual(conta.status, 401, 'status da conta inexistente');
+      igual(conta.dados.mensagem, senha.dados.mensagem, 'as duas mensagens precisam ser iguais');
     },
   },
   {
@@ -457,7 +565,11 @@ export const conformidadeIdentidade: VerificacaoConformidade[] = [
       ok(aplicativo.status < 300, 'entrada pelo aplicativo');
       const token = aplicativo.dados.token;
       // Sem o tipo, a pergunta é sobre uma sessão de painel que não existe.
-      igual((await a.chamar('GET', '/api/quadro', { sessao: token })).status, 401, 'quadro sem o tipo');
+      igual(
+        (await a.chamar('GET', '/api/quadro', { sessao: token })).status,
+        401,
+        'quadro sem o tipo',
+      );
       const comTipo = await a.chamar('GET', '/api/quadro', { sessao: token, tipo: 'aplicativo' });
       ok(comTipo.status < 300, 'quadro com o tipo: ' + JSON.stringify(comTipo.dados));
       ok(comTipo.dados.pessoas.length > 0, 'o quadro precisa vir preenchido');

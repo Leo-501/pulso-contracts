@@ -1,4 +1,4 @@
-import { esquemaLogin, esquemaPessoa, esquemaSenha, esquemaUnidade, esquemaVinculo, } from '../index.js';
+import { esquemaEmpresa, esquemaLogin, esquemaPessoa, esquemaSenha, esquemaUnidade, esquemaVinculo, } from '../index.js';
 import { esquemaPedidoIntrospeccao } from './index.js';
 import { esquemaLoginAplicativo } from '../mobile.js';
 /**
@@ -60,11 +60,14 @@ export function criarIdentidadeDuplo(spec) {
             trocar_senha: p.trocar_senha ?? false,
             vinculos: new Map(),
         };
+        if (p.empresa_padrao)
+            pessoa.empresa_padrao = empresas.get(p.empresa_padrao)?.id;
         for (const v of p.vinculos) {
             const empresa = empresas.get(v.empresa);
             if (!empresa)
                 throw new Error(`empresa desconhecida no duplo: ${v.empresa}`);
-            const nomes = v.unidades ?? spec.empresas.find((e) => e.apelido === v.empresa).unidades.map((u) => u.nome);
+            const nomes = v.unidades ??
+                spec.empresas.find((e) => e.apelido === v.empresa).unidades.map((u) => u.nome);
             pessoa.vinculos.set(empresa.id, {
                 papel: v.papel,
                 ativo: v.ativo ?? true,
@@ -128,22 +131,37 @@ export function criarIdentidadeDuplo(spec) {
             contexto: contextoDe(sessao),
         };
     };
+    /** Empresas em que o vínculo está ativo e alcança alguma unidade, por nome. */
+    const empresasDe = (pessoa) => [...pessoa.vinculos]
+        .filter(([, v]) => v.ativo && v.unidades.size > 0)
+        .map(([id]) => empresaPorId(id))
+        .sort((a, b) => a.nome.localeCompare(b.nome) || a.id.localeCompare(b.id));
+    /** Sem empresa no pedido, abre a padrão; sem padrão válida, a primeira por nome. */
+    const empresaDeEntrada = (pessoa) => {
+        const candidatas = empresasDe(pessoa);
+        return candidatas.find((e) => e.id === pessoa.empresa_padrao) ?? candidatas[0];
+    };
     function autenticar(corpo, aplicativo) {
         const dados = aplicativo ? esquemaLoginAplicativo.parse(corpo) : esquemaLogin.parse(corpo);
-        const chave = `${dados.empresa}:${dados.email.toLowerCase()}`;
+        const chave = dados.email.toLowerCase();
         const usadas = (tentativas.get(chave) ?? 0) + 1;
         tentativas.set(chave, usadas);
         if (usadas > 10)
             throw new ErroHttp(403, 'Muitas tentativas. Aguarde 15 minutos.');
-        const empresa = empresas.get(dados.empresa);
+        const recusa = dados.empresa
+            ? 'Empresa, e-mail ou senha inválidos.'
+            : 'E-mail ou senha inválidos.';
         const pessoa = pessoas.get(dados.email.toLowerCase());
+        const empresa = dados.empresa
+            ? empresas.get(dados.empresa)
+            : pessoa && empresaDeEntrada(pessoa);
         const vinculo = empresa && pessoa?.vinculos.get(empresa.id);
         // Empresa errada e senha errada dão a mesma resposta: distinguir vazaria a
         // existência da conta.
         if (!empresa || !pessoa || !vinculo || !pessoa.ativo || !vinculo.ativo)
-            throw new ErroHttp(401, 'Empresa, e-mail ou senha inválidos.');
+            throw new ErroHttp(401, recusa);
         if (pessoa.senha !== dados.senha)
-            throw new ErroHttp(401, 'Empresa, e-mail ou senha inválidos.');
+            throw new ErroHttp(401, recusa);
         if (aplicativo && !['tecnico', 'solicitante'].includes(vinculo.papel))
             throw new ErroHttp(403, 'Este aplicativo atende técnicos e solicitantes. Use o painel para os demais perfis.');
         tentativas.delete(chave);
@@ -183,7 +201,9 @@ export function criarIdentidadeDuplo(spec) {
     };
     const derrubarSessoes = (pessoaId, empresa, preservar) => {
         for (const [token, s] of sessoes)
-            if (s.pessoa === pessoaId && (empresa === undefined || s.empresa === empresa) && token !== preservar)
+            if (s.pessoa === pessoaId &&
+                (empresa === undefined || s.empresa === empresa) &&
+                token !== preservar)
                 sessoes.delete(token);
     };
     const pessoasDa = (empresaId) => [...pessoas.values()]
@@ -230,6 +250,24 @@ export function criarIdentidadeDuplo(spec) {
             const emitida = emitir(pessoa, sessao.empresa, unidade_id, 'painel');
             // A anterior é revogada: um token antigo que continuasse valendo carregaria
             // o escopo da unidade de antes.
+            sessoes.delete(sessao.token);
+            return emitida;
+        }
+        if (metodo === 'GET' && caminho === '/api/empresas') {
+            const pessoa = porId(sessao.pessoa);
+            const padrao = empresaDeEntrada(pessoa)?.id;
+            return empresasDe(pessoa).map((e) => ({ id: e.id, nome: e.nome, padrao: e.id === padrao }));
+        }
+        if (metodo === 'POST' && (caminho === '/api/empresa' || caminho === '/api/empresa/padrao')) {
+            const { empresa_id } = esquemaEmpresa.parse(corpo);
+            const pessoa = porId(sessao.pessoa);
+            if (!empresasDe(pessoa).some((e) => e.id === empresa_id))
+                throw new ErroHttp(403, 'Você não tem acesso a esta empresa.');
+            if (caminho === '/api/empresa/padrao') {
+                pessoa.empresa_padrao = empresa_id;
+                return { ok: true };
+            }
+            const emitida = emitir(pessoa, empresa_id, entrada(pessoa.vinculos.get(empresa_id)).id, 'painel');
             sessoes.delete(sessao.token);
             return emitida;
         }

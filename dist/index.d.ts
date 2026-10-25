@@ -14,8 +14,14 @@ export declare const prioridade: z.ZodEnum<{
 }>;
 export declare const esquemaId: z.ZodString;
 export declare const esquemaData: z.ZodString;
+/**
+ * Entrada no painel. A empresa é opcional: sem ela, a identidade abre a empresa
+ * padrão da pessoa, e sem padrão a primeira em ordem alfabética. Quem ainda manda
+ * a empresa (o aplicativo, os produtos de antes desta versão) continua entrando
+ * nela.
+ */
 export declare const esquemaLogin: z.ZodObject<{
-    empresa: z.ZodString;
+    empresa: z.ZodOptional<z.ZodString>;
     email: z.ZodEmail;
     senha: z.ZodString;
 }, z.core.$strict>;
@@ -195,5 +201,8 @@ export declare const esquemaVinculo: z.ZodObject<{
 }, z.core.$strict>;
 export declare const esquemaUnidade: z.ZodObject<{
     unidade_id: z.ZodString;
+}, z.core.$strict>;
+export declare const esquemaEmpresa: z.ZodObject<{
+    empresa_id: z.ZodString;
 }, z.core.$strict>;
 //# sourceMappingURL=index.d.ts.map

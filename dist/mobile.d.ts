@@ -1,9 +1,9 @@
 import { z } from 'zod';
 import { type Papel, type Situacao } from './index.js';
 export declare const esquemaLoginAplicativo: z.ZodObject<{
-    empresa: z.ZodString;
     email: z.ZodEmail;
     senha: z.ZodString;
+    empresa: z.ZodString;
     dispositivo_id: z.ZodString;
 }, z.core.$strict>;
 export declare const esquemaItemManifesto: z.ZodObject<{

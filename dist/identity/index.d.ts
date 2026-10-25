@@ -149,6 +149,16 @@ export declare const esquemaListaUnidades: z.ZodArray<z.ZodObject<{
     nome: z.ZodString;
     cidade: z.ZodString;
 }, z.core.$strip>>;
+/**
+ * Empresas em que a pessoa tem vínculo ativo, em ordem de nome. `padrao` marca a
+ * que abre quando ela entra sem informar a empresa; no máximo uma vem marcada.
+ */
+export declare const esquemaListaEmpresas: z.ZodArray<z.ZodObject<{
+    id: z.ZodString;
+    nome: z.ZodString;
+    padrao: z.ZodBoolean;
+}, z.core.$strip>>;
+export type ListaEmpresas = z.infer<typeof esquemaListaEmpresas>;
 export type OpcoesClienteIdentidade = {
     baseUrl: string;
     clienteId: string;
@@ -279,6 +289,32 @@ export declare class ClienteIdentidade {
             papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
             trocar_senha: boolean;
         };
+    }>;
+    empresas(token: string): Promise<{
+        id: string;
+        nome: string;
+        padrao: boolean;
+    }[]>;
+    /** Como a troca de unidade: sessão nova na outra empresa, a anterior revogada. */
+    trocarEmpresa(token: string, corpo: unknown): Promise<{
+        token: string;
+        expira_em: string;
+        contexto: {
+            id: string;
+            nome: string;
+            email: string;
+            empresa_id: string;
+            empresa_nome: string;
+            unidade_id: string;
+            unidade_nome: string;
+            fuso: string;
+            papel: "administrador" | "gestor" | "tecnico" | "solicitante" | "almoxarife" | "consulta";
+            trocar_senha: boolean;
+        };
+    }>;
+    /** A empresa que abre na próxima entrada sem empresa. A sessão atual não muda. */
+    definirEmpresaPadrao(token: string, corpo: unknown): Promise<{
+        ok: boolean;
     }>;
     trocarSenha(token: string, corpo: unknown): Promise<{
         ok: boolean;

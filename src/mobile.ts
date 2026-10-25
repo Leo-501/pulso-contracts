@@ -8,7 +8,11 @@ import {
   type Situacao,
 } from './index.js';
 
-export const esquemaLoginAplicativo = esquemaLogin.extend({ dispositivo_id: esquemaId });
+// O protocolo 1 continua exigindo a empresa: a entrada sem ela é do painel.
+export const esquemaLoginAplicativo = esquemaLogin.extend({
+  empresa: esquemaLogin.shape.empresa.unwrap(),
+  dispositivo_id: esquemaId,
+});
 
 export const esquemaItemManifesto = z
   .object({

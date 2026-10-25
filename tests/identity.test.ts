@@ -43,14 +43,14 @@ function transport(responder: (body: any, call: number, url: string) => unknown)
     state.bodies.push(body);
     const result: any = responder(body, state.calls, url);
     if (result instanceof Error) throw result;
-    if (typeof result === "number")
-      return new Response("erro", { status: result, headers: { "Content-Type": "text/plain" } });
+    if (typeof result === 'number')
+      return new Response('erro', { status: result, headers: { 'Content-Type': 'text/plain' } });
     // `__status` roteiriza uma recusa com corpo, que é como a identidade
     // responde 4xx de verdade.
     const { __status, ...payload } = result ?? {};
     return new Response(JSON.stringify(__status ? payload : result), {
       status: __status ?? 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
     });
   }) as unknown as typeof globalThis.fetch;
   return { state, fetchImpl };
@@ -66,7 +66,11 @@ const client = (fetchImpl: typeof globalThis.fetch, cacheMs?: number) =>
 
 test('a credencial de serviço e o token vão no envio, e a barra final não duplica', async () => {
   const seen: string[] = [];
-  const { state, fetchImpl } = transport(() => ({ ativa: true, contexto: contexto(), expira_em: 'depois' }));
+  const { state, fetchImpl } = transport(() => ({
+    ativa: true,
+    contexto: contexto(),
+    expira_em: 'depois',
+  }));
   const wrapped = (async (url: string, init: any) => {
     seen.push(url);
     return (fetchImpl as any)(url, init);
@@ -79,7 +83,11 @@ test('a credencial de serviço e o token vão no envio, e a barra final não dup
 });
 
 test('resposta positiva é reaproveitada dentro da janela e expira depois dela', async () => {
-  const { state, fetchImpl } = transport(() => ({ ativa: true, contexto: contexto(), expira_em: 'depois' }));
+  const { state, fetchImpl } = transport(() => ({
+    ativa: true,
+    contexto: contexto(),
+    expira_em: 'depois',
+  }));
   const c = client(fetchImpl, 50);
   await c.introspectar('tok');
   await c.introspectar('tok');
@@ -91,7 +99,11 @@ test('resposta positiva é reaproveitada dentro da janela e expira depois dela',
 });
 
 test('cacheMs zero devolve revogação imediata ao custo de um salto por chamada', async () => {
-  const { state, fetchImpl } = transport(() => ({ ativa: true, contexto: contexto(), expira_em: 'depois' }));
+  const { state, fetchImpl } = transport(() => ({
+    ativa: true,
+    contexto: contexto(),
+    expira_em: 'depois',
+  }));
   const c = client(fetchImpl, 0);
   await c.introspectar('tok');
   await c.introspectar('tok');
@@ -110,7 +122,11 @@ test('resposta negativa nunca entra no cache', async () => {
 });
 
 test('encerrar a sessão descarta a entrada em cache sem esperar a janela', async () => {
-  const { state, fetchImpl } = transport(() => ({ ativa: true, contexto: contexto(), expira_em: 'depois' }));
+  const { state, fetchImpl } = transport(() => ({
+    ativa: true,
+    contexto: contexto(),
+    expira_em: 'depois',
+  }));
   const c = client(fetchImpl, 10_000);
   await c.introspectar('tok');
   c.esquecer('tok');
@@ -143,7 +159,9 @@ test('chamadas simultâneas com o mesmo token compartilham um único envio', asy
 
 test('identidade fora do ar falha fechado, e a falha não fica grudada', async () => {
   const { state, fetchImpl } = transport((_b, call) =>
-    call === 1 ? new Error('conexão recusada') : { ativa: true, contexto: contexto(), expira_em: 'd' },
+    call === 1
+      ? new Error('conexão recusada')
+      : { ativa: true, contexto: contexto(), expira_em: 'd' },
   );
   const c = client(fetchImpl);
   await assert.rejects(() => c.introspectar('tok'), IdentidadeIndisponivel);
@@ -164,7 +182,10 @@ test('resposta fora do contrato é recusada em vez de virar acesso', async () =>
 });
 
 test('o schema do pedido recusa token gigante e assume sessão web', () => {
-  assert.deepEqual(esquemaPedidoIntrospeccao.parse({ token: 'abc' }), { token: 'abc', tipo: 'painel' });
+  assert.deepEqual(esquemaPedidoIntrospeccao.parse({ token: 'abc' }), {
+    token: 'abc',
+    tipo: 'painel',
+  });
   assert.equal(esquemaPedidoIntrospeccao.safeParse({ token: 'x'.repeat(513) }).success, false);
   assert.equal(esquemaPedidoIntrospeccao.safeParse({ token: '' }).success, false);
   assert.equal(
@@ -178,11 +199,17 @@ test('o schema da resposta aceita as duas formas e recusa a mistura', () => {
   assert.deepEqual(esquemaIntrospeccao.parse(negativa), negativa);
   const positiva = { ativa: true as const, contexto: contexto(), expira_em: 'amanhã' };
   assert.deepEqual(esquemaIntrospeccao.parse(positiva), positiva);
-  assert.equal(esquemaIntrospeccao.safeParse({ ativa: false, contexto: contexto() }).success, false);
+  assert.equal(
+    esquemaIntrospeccao.safeParse({ ativa: false, contexto: contexto() }).success,
+    false,
+  );
   assert.equal(esquemaIntrospeccao.safeParse({ ativa: true }).success, false);
   // Campo desconhecido numa positiva é tolerado de propósito: é como a identidade
   // evolui sem derrubar um consumidor que ainda não subiu.
-  const futura = esquemaIntrospeccao.safeParse({ ...positiva, campo_novo: 'de uma versão adiante' });
+  const futura = esquemaIntrospeccao.safeParse({
+    ...positiva,
+    campo_novo: 'de uma versão adiante',
+  });
   assert.equal(futura.success, true);
 });
 
@@ -256,6 +283,26 @@ test('trocar de unidade descarta o token anterior do cache', async () => {
   assert.equal(state.calls, 3);
 });
 
+test('trocar de empresa descarta o token anterior do cache', async () => {
+  const antes = contexto();
+  const { state, fetchImpl } = transport((_b, _call, url) =>
+    url.endsWith('/api/empresa')
+      ? {
+          token: 'novo',
+          expira_em: 'depois',
+          contexto: { ...contexto(), empresa_id: randomUUID() },
+        }
+      : { ativa: true, contexto: antes, expira_em: 'depois' },
+  );
+  const c = client(fetchImpl);
+  await c.introspectar('velho');
+  const nova = await c.trocarEmpresa('velho', { empresa_id: randomUUID() });
+  assert.notEqual(nova.contexto.empresa_id, antes.empresa_id);
+  // Como na troca de unidade: o token velho em cache carregaria a empresa anterior.
+  await c.introspectar('velho');
+  assert.equal(state.calls, 3);
+});
+
 test('trocar a senha descarta o contexto em cache', async () => {
   // `trocar_senha` acabou de mudar; o contexto guardado está errado.
   const { state, fetchImpl } = transport((_b, _call, url) =>
@@ -306,7 +353,10 @@ test('nas demais rotas o código separa credencial do produto de senha da pessoa
   }));
   await assert.rejects(() => client(doProduto.fetchImpl).entrar({}), IdentidadeIndisponivel);
 
-  const daPessoa = transport(() => ({ __status: 401, mensagem: 'Empresa, e-mail ou senha inválidos.' }));
+  const daPessoa = transport(() => ({
+    __status: 401,
+    mensagem: 'Empresa, e-mail ou senha inválidos.',
+  }));
   await assert.rejects(() => client(daPessoa.fetchImpl).entrar({}), IdentidadeRecusou);
 });
 

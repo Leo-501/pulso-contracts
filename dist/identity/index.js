@@ -83,6 +83,11 @@ export const esquemaListaContas = z.object({
     unidades: z.array(z.object({ id: esquemaId, nome: z.string(), cidade: z.string() })),
 });
 export const esquemaListaUnidades = z.array(z.object({ id: esquemaId, nome: z.string(), cidade: z.string() }));
+/**
+ * Empresas em que a pessoa tem vínculo ativo, em ordem de nome. `padrao` marca a
+ * que abre quando ela entra sem informar a empresa; no máximo uma vem marcada.
+ */
+export const esquemaListaEmpresas = z.array(z.object({ id: esquemaId, nome: z.string(), padrao: z.boolean() }));
 const esquemaOk = z.object({ ok: z.boolean() });
 const esquemaRedefinicao = z.object({ id: esquemaId, senha_temporaria: z.string() });
 export class IdentidadeIndisponivel extends Error {
@@ -208,6 +213,23 @@ export class ClienteIdentidade {
         // deixaria o token morto valendo pela janela inteira.
         this.esquecer(token);
         return emitida;
+    }
+    empresas(token) {
+        return this.chamar('/api/empresas', esquemaListaEmpresas, { metodo: 'GET', sessao: token });
+    }
+    /** Como a troca de unidade: sessão nova na outra empresa, a anterior revogada. */
+    async trocarEmpresa(token, corpo) {
+        const emitida = await this.chamar('/api/empresa', esquemaSessaoEmitida, {
+            metodo: 'POST',
+            corpo,
+            sessao: token,
+        });
+        this.esquecer(token);
+        return emitida;
+    }
+    /** A empresa que abre na próxima entrada sem empresa. A sessão atual não muda. */
+    definirEmpresaPadrao(token, corpo) {
+        return this.chamar('/api/empresa/padrao', esquemaOk, { metodo: 'POST', corpo, sessao: token });
     }
     async trocarSenha(token, corpo) {
         const resultado = await this.chamar('/api/senha', esquemaOk, {

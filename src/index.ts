@@ -61,8 +61,18 @@ export const esquemaData = z
     return !Number.isNaN(d.valueOf()) && d.toISOString().slice(0, 10) === valor;
   }, 'Data inválida.');
 
+/**
+ * Entrada no painel. A empresa é opcional: sem ela, a identidade abre a empresa
+ * padrão da pessoa, e sem padrão a primeira em ordem alfabética. Quem ainda manda
+ * a empresa (o aplicativo, os produtos de antes desta versão) continua entrando
+ * nela.
+ */
 export const esquemaLogin = z
-  .object({ empresa: obrigatorio(80), email: z.email(), senha: z.string().min(1).max(256) })
+  .object({
+    empresa: obrigatorio(80).optional(),
+    email: z.email(),
+    senha: z.string().min(1).max(256),
+  })
   .strict();
 
 export const esquemaAtivo = z
@@ -258,5 +268,6 @@ export const esquemaVinculo = z
   })
   .strict();
 
-// --- Seleção de unidade ----------------------------------------------------
+// --- Seleção de unidade e de empresa ---------------------------------------
 export const esquemaUnidade = z.object({ unidade_id: esquemaId }).strict();
+export const esquemaEmpresa = z.object({ empresa_id: esquemaId }).strict();

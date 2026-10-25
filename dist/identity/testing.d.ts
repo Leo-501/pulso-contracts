@@ -30,6 +30,8 @@ export type PessoaDuplo = {
     senha: string;
     ativo?: boolean;
     trocar_senha?: boolean;
+    /** Apelido da empresa que abre quando a pessoa entra sem informar uma. */
+    empresa_padrao?: string;
     vinculos: {
         empresa: string;
         papel: Papel;

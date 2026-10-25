@@ -33,6 +33,8 @@ export type AlvoConformidade = {
         duasUnidades: string;
         /** Técnico, para exercitar papel sem poder administrativo. */
         tecnico: string;
+        /** Pessoa com vínculo ativo em duas empresas. */
+        duasEmpresas: string;
     };
 };
 export type VerificacaoConformidade = {
